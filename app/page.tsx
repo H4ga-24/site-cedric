@@ -33,11 +33,12 @@ export default function Home() {
   const [selectedNationality, setSelectedNationality] = useState<string>("ALL");
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
 
-  // État de l'espace Admin
+  // Sécurité Administrateur (Mot de passe simple)
   const [isAdminMode, setIsAdminMode] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showLegal, setShowLegal] = useState(false);
 
   // Formulaire d'ajout
   const [newTitleFr, setNewTitleFr] = useState("");
@@ -85,7 +86,7 @@ export default function Home() {
         .upload(filePath, file);
 
       if (uploadError) {
-        console.error("Erreur upload :", uploadError.message);
+        console.error("Erreur d'envoi :", uploadError.message);
         continue;
       }
 
@@ -133,9 +134,9 @@ export default function Home() {
     const { error } = await supabase.from("items").insert([newItem]);
 
     if (error) {
-      alert("Erreur : " + error.message);
+      alert("Erreur de publication : " + error.message);
     } else {
-      alert("L'objet a été publié !");
+      alert("L'objet a été publié avec succès !");
       setNewTitleFr("");
       setNewTitleEn("");
       setNewDescFr("");
@@ -150,23 +151,43 @@ export default function Home() {
     setIsSubmitting(false);
   };
 
+  // Se connecter via code simple
+  const handleUnlockAdmin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (adminPassword === "cedric123") {
+      setIsUnlocked(true);
+      setAdminPassword("");
+    } else {
+      alert("Code d'accès incorrect");
+    }
+  };
+
+  const handleLogout = () => {
+    setIsUnlocked(false);
+  };
+
+  // Mettre à jour le statut d'un objet (Disponible, Réservé, Vendu)
+  const handleUpdateStatus = async (id: string, status: MilitariaItem["status"]) => {
+    const { error } = await supabase
+      .from("items")
+      .update({ status })
+      .eq("id", id);
+
+    if (error) {
+      alert("Erreur de mise à jour : " + error.message);
+    } else {
+      fetchItems();
+    }
+  };
+
   const handleDeleteItem = async (id: string) => {
-    if (confirm("Supprimer cet objet ?")) {
+    if (confirm("Supprimer cet objet du catalogue ?")) {
       const { error } = await supabase.from("items").delete().eq("id", id);
       if (error) {
         alert("Erreur : " + error.message);
       } else {
         fetchItems();
       }
-    }
-  };
-
-  const handleUnlockAdmin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (adminPassword === "cedric123") {
-      setIsUnlocked(true);
-    } else {
-      alert("Code d'accès incorrect");
     }
   };
 
@@ -221,9 +242,9 @@ export default function Home() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => setIsAdminMode(!isAdminMode)}
-              className="text-xs border border-stone-300 text-stone-600 px-3 py-1 hover:bg-stone-50 transition"
+              className={`text-xs border px-3 py-1 transition ${isUnlocked ? "border-amber-600 text-amber-700 bg-amber-50" : "border-stone-300 text-stone-600 hover:bg-stone-50"}`}
             >
-              {isAdminMode ? "Admin ✕" : "Admin ⚙"}
+              {isUnlocked ? (lang === "fr" ? "Admin Déverrouillé" : "Admin Unlocked") : (lang === "fr" ? "Connexion Admin" : "Admin Login")}
             </button>
 
             <div className="flex gap-1 text-xs font-medium">
@@ -244,7 +265,7 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Éditorial / Présentation Commerciale */}
+      {/* Présentation Commerciale */}
       <section className="bg-white border-b border-stone-200 py-16 px-4">
         <div className="max-w-4xl mx-auto text-center">
           <span className="text-xs font-serif italic text-stone-500 tracking-wider">
@@ -254,15 +275,15 @@ export default function Home() {
             {lang === "fr" ? "Achat, vente et négoce de pièces d'origine." : "Purchase, sale, and trade of original militaria."}
           </h2>
           <p className="text-stone-600 text-sm leading-relaxed max-w-2xl mx-auto font-sans">
-  {lang === "fr" 
-    ? "CedMilitaria US est spécialisé dans le négoce d'antiquités militaires d'époque. Parcourez notre catalogue pour acquérir des objets garantis d'origine. Nous sommes également acheteurs : si vous souhaitez nous proposer à la vente un objet historique ou une collection complète, contactez-nous."
-    : "CedMilitaria US specializes in the trade of genuine vintage military antiquities. Browse our catalog to acquire guaranteed original items. We are also active buyers: if you wish to offer us a historical object or an entire collection for purchase, please get in touch."}
-</p>
+            {lang === "fr" 
+              ? "CedMilitaria US est spécialisé dans le négoce d'antiquités militaires d'époque. Parcourez notre catalogue pour acquérir des objets garantis d'origine. Nous sommes également acheteurs : si vous souhaitez nous proposer à la vente un objet historique ou une collection complète, contactez-nous."
+              : "CedMilitaria US specializes in the trade of genuine vintage military antiquities. Browse our catalog to acquire guaranteed original items. We are also active buyers: if you wish to offer us a historical object or an entire collection for purchase, please get in touch."}
+          </p>
           <div className="h-px bg-stone-300 w-16 mx-auto mt-8"></div>
         </div>
       </section>
 
-      {/* Section : Comment acquérir (Clair, transactionnel) */}
+      {/* Transactions & Commandes */}
       <section className="bg-stone-100/50 border-b border-stone-200 py-12 px-4">
         <div className="max-w-5xl mx-auto">
           <h4 className="text-center text-xs font-bold uppercase text-stone-400 tracking-widest mb-8">
@@ -288,176 +309,192 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Module Administration */}
+      {/* Module Administration Sécurisé par code */}
       {isAdminMode && (
         <section className="bg-stone-100 border-b border-stone-200 p-6">
           <div className="max-w-3xl mx-auto bg-white p-6 rounded-md shadow-xs border border-stone-200">
-            <h3 className="text-lg font-serif mb-4 text-stone-800 border-b pb-2">
-              {lang === "fr" ? "Déposer une annonce de collection" : "Publish a Collectible Item"}
-            </h3>
-
+            
             {!isUnlocked ? (
-              <form onSubmit={handleUnlockAdmin} className="flex gap-2">
-                <input
-                  type="password"
-                  placeholder={lang === "fr" ? "Code d'accès modérateur" : "Moderator passcode"}
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  className="border border-stone-300 p-2 text-sm flex-1"
-                />
-                <button type="submit" className="bg-stone-800 text-white px-4 py-2 text-sm hover:bg-stone-700">
-                  {lang === "fr" ? "Déverrouiller" : "Unlock"}
-                </button>
+              // Formulaire d'accès simple par mot de passe
+              <form onSubmit={handleUnlockAdmin} className="space-y-4">
+                <h3 className="text-sm font-bold uppercase text-stone-500 tracking-wider mb-2">
+                  {lang === "fr" ? "Déverrouiller l'Espace Administrateur" : "Unlock Admin Space"}
+                </h3>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    placeholder={lang === "fr" ? "Code d'accès administrateur" : "Admin passcode"}
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    className="border border-stone-300 p-2 text-sm flex-1"
+                    required
+                  />
+                  <button type="submit" className="bg-stone-900 text-white px-6 py-2 text-sm hover:bg-stone-800 transition uppercase tracking-wider font-medium">
+                    {lang === "fr" ? "Valider" : "Submit"}
+                  </button>
+                </div>
               </form>
             ) : (
-              <form onSubmit={handleAddItem} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Titre (Français)</label>
-                    <input
-                      type="text"
-                      value={newTitleFr}
-                      onChange={(e) => setNewTitleFr(e.target.value)}
-                      className="w-full border border-stone-300 p-2 text-sm"
-                      placeholder="Ex: Casque Allemand M42..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Title (English)</label>
-                    <input
-                      type="text"
-                      value={newTitleEn}
-                      onChange={(e) => setNewTitleEn(e.target.value)}
-                      className="w-full border border-stone-300 p-2 text-sm"
-                      placeholder="Ex: German M42 Helmet..."
-                    />
-                  </div>
+              // Formulaire d'ajout (accessible uniquement si déverrouillé)
+              <div>
+                <div className="flex justify-between items-center border-b pb-3 mb-4">
+                  <h3 className="text-lg font-serif text-stone-800">
+                    {lang === "fr" ? "Déposer une annonce" : "Publish a Collectible"}
+                  </h3>
+                  <button onClick={handleLogout} className="text-xs text-red-600 hover:underline">
+                    {lang === "fr" ? "Verrouiller à nouveau" : "Lock Admin"}
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Description (Français)</label>
-                    <textarea
-                      value={newDescFr}
-                      onChange={(e) => setNewDescFr(e.target.value)}
-                      className="w-full border border-stone-300 p-2 text-sm h-20"
-                    />
+                <form onSubmit={handleAddItem} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Titre (Français)</label>
+                      <input
+                        type="text"
+                        value={newTitleFr}
+                        onChange={(e) => setNewTitleFr(e.target.value)}
+                        className="w-full border border-stone-300 p-2 text-sm"
+                        placeholder="Ex: Casque Allemand M42..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Title (English)</label>
+                      <input
+                        type="text"
+                        value={newTitleEn}
+                        onChange={(e) => setNewTitleEn(e.target.value)}
+                        className="w-full border border-stone-300 p-2 text-sm"
+                        placeholder="Ex: German M42 Helmet..."
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Description (English)</label>
-                    <textarea
-                      value={newDescEn}
-                      onChange={(e) => setNewDescEn(e.target.value)}
-                      className="w-full border border-stone-300 p-2 text-sm h-20"
-                    />
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Prix (€)</label>
-                    <input
-                      type="number"
-                      value={newPrice}
-                      onChange={(e) => setNewPrice(e.target.value)}
-                      className="w-full border border-stone-300 p-2 text-sm"
-                    />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Description (Français)</label>
+                      <textarea
+                        value={newDescFr}
+                        onChange={(e) => setNewDescFr(e.target.value)}
+                        className="w-full border border-stone-300 p-2 text-sm h-20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Description (English)</label>
+                      <textarea
+                        value={newDescEn}
+                        onChange={(e) => setNewDescEn(e.target.value)}
+                        className="w-full border border-stone-300 p-2 text-sm h-20"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Époque</label>
-                    <select
-                      value={newEra}
-                      onChange={(e) => setNewEra(e.target.value as MilitariaItem["era"])}
-                      className="w-full border border-stone-300 p-2 text-sm"
-                    >
-                      <option value="WW1">World War I</option>
-                      <option value="WW2">World War II</option>
-                      <option value="VIETNAM">Vietnam War</option>
-                      <option value="POST_WAR">Post-War</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Nationalité</label>
-                    <select
-                      value={newNationality}
-                      onChange={(e) => setNewNationality(e.target.value as MilitariaItem["nationality"])}
-                      className="w-full border border-stone-300 p-2 text-sm"
-                    >
-                      <option value="US">Américain</option>
-                      <option value="DE">Allemand</option>
-                      <option value="UK">Anglais</option>
-                      <option value="OTHER">Autre</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Équipement</label>
-                    <select
-                      value={newCategory}
-                      onChange={(e) => setNewCategory(e.target.value as MilitariaItem["category"])}
-                      className="w-full border border-stone-300 p-2 text-sm"
-                    >
-                      <option value="HELMET">Casque / Coiffure</option>
-                      <option value="UNIFORM">Uniforme</option>
-                      <option value="MEDAL">Médaille / Insigne</option>
-                      <option value="EQUIPMENT">Équipement</option>
-                      <option value="WEAPON">Arme neutralisée</option>
-                      <option value="OTHER">Divers</option>
-                    </select>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Marquages / Fabricant</label>
-                    <input
-                      type="text"
-                      value={newMarkings}
-                      onChange={(e) => setNewMarkings(e.target.value)}
-                      className="w-full border border-stone-300 p-2 text-sm"
-                      placeholder="Ex: Q66, McCord..."
-                    />
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Prix (€)</label>
+                      <input
+                        type="number"
+                        value={newPrice}
+                        onChange={(e) => setNewPrice(e.target.value)}
+                        className="w-full border border-stone-300 p-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Époque</label>
+                      <select
+                        value={newEra}
+                        onChange={(e) => setNewEra(e.target.value as MilitariaItem["era"])}
+                        className="w-full border border-stone-300 p-2 text-sm"
+                      >
+                        <option value="WW1">World War I</option>
+                        <option value="WW2">World War II</option>
+                        <option value="VIETNAM">Vietnam War</option>
+                        <option value="POST_WAR">Post-War</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Nationalité</label>
+                      <select
+                        value={newNationality}
+                        onChange={(e) => setNewNationality(e.target.value as MilitariaItem["nationality"])}
+                        className="w-full border border-stone-300 p-2 text-sm"
+                      >
+                        <option value="US">Américain</option>
+                        <option value="DE">Allemand</option>
+                        <option value="UK">Anglais</option>
+                        <option value="OTHER">Autre</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Équipement</label>
+                      <select
+                        value={newCategory}
+                        onChange={(e) => setNewCategory(e.target.value as MilitariaItem["category"])}
+                        className="w-full border border-stone-300 p-2 text-sm"
+                      >
+                        <option value="HELMET">Casque / Coiffure</option>
+                        <option value="UNIFORM">Uniforme</option>
+                        <option value="MEDAL">Médaille / Insigne</option>
+                        <option value="EQUIPMENT">Équipement</option>
+                        <option value="WEAPON">Arme neutralisée</option>
+                        <option value="OTHER">Divers</option>
+                      </select>
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-stone-500 mb-1">État de conservation</label>
-                    <input
-                      type="text"
-                      value={newCondition}
-                      onChange={(e) => setNewCondition(e.target.value)}
-                      className="w-full border border-stone-300 p-2 text-sm"
-                      placeholder="Ex: Excellent, Mint, Combat Wear..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase text-stone-500 mb-1">N° de Certificat (Armes neut.)</label>
-                    <input
-                      type="text"
-                      value={newCertNumber}
-                      onChange={(e) => setNewCertNumber(e.target.value)}
-                      className="w-full border border-stone-300 p-2 text-sm"
-                      placeholder="Ex: St-Etienne 4287..."
-                    />
-                  </div>
-                </div>
 
-                <div>
-                  <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Photos de l'objet (Max 3, Haute définition)</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={(e) => setSelectedFiles(e.target.files)}
-                    className="w-full text-xs text-stone-500 file:mr-4 file:py-2 file:px-4 file:border-0 file:text-xs file:font-semibold file:bg-stone-800 file:text-white hover:file:bg-stone-700"
-                  />
-                </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Marquages / Fabricant</label>
+                      <input
+                        type="text"
+                        value={newMarkings}
+                        onChange={(e) => setNewMarkings(e.target.value)}
+                        className="w-full border border-stone-300 p-2 text-sm"
+                        placeholder="Ex: Q66, McCord..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">État de conservation</label>
+                      <input
+                        type="text"
+                        value={newCondition}
+                        onChange={(e) => setNewCondition(e.target.value)}
+                        className="w-full border border-stone-300 p-2 text-sm"
+                        placeholder="Ex: Excellent, Mint, Combat Wear..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">N° de Certificat (Armes neut.)</label>
+                      <input
+                        type="text"
+                        value={newCertNumber}
+                        onChange={(e) => setNewCertNumber(e.target.value)}
+                        className="w-full border border-stone-300 p-2 text-sm"
+                        placeholder="Ex: St-Etienne 4287..."
+                      />
+                    </div>
+                  </div>
 
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="w-full bg-stone-900 text-white py-2 hover:bg-stone-800 transition text-sm tracking-wider uppercase font-medium disabled:bg-stone-400"
-                >
-                  {isSubmitting ? "Publication en cours..." : "Mettre l'objet en vente"}
-                </button>
-              </form>
+                  <div>
+                    <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Photos de l'objet (Max 3, Haute définition)</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) => setSelectedFiles(e.target.files)}
+                      className="w-full text-xs text-stone-500 file:mr-4 file:py-2 file:px-4 file:border-0 file:text-xs file:font-semibold file:bg-stone-800 file:text-white hover:file:bg-stone-700"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full bg-stone-900 text-white py-2 hover:bg-stone-800 transition text-sm tracking-wider uppercase font-medium disabled:bg-stone-400"
+                  >
+                    {isSubmitting ? "Publication en cours..." : "Mettre l'objet en vente"}
+                  </button>
+                </form>
+              </div>
             )}
           </div>
         </section>
@@ -522,62 +559,108 @@ export default function Home() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {filteredItems.map((item) => (
-              <article
-                key={item.id}
-                onClick={() => { setSelectedItem(item); setActiveImageIdx(0); }}
-                className="border border-stone-200 bg-white hover:border-stone-400 transition-all duration-300 flex flex-col justify-between relative cursor-pointer group rounded-sm"
-              >
-                {isAdminMode && isUnlocked && (
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDeleteItem(item.id); }}
-                    className="absolute top-2 right-2 bg-red-600 text-white text-[10px] px-2 py-1 rounded hover:bg-red-700 z-10"
-                  >
-                    Supprimer
-                  </button>
-                )}
+            {filteredItems.map((item) => {
+              const isReserved = item.status === "reserved";
+              const isSold = item.status === "sold";
 
-                <div>
-                  <div className="aspect-video w-full bg-stone-50 relative overflow-hidden border-b border-stone-200">
-                    <img
-                      src={item.images[0]}
-                      alt={lang === "fr" ? item.title_fr : item.title_en}
-                      className="object-cover w-full h-full transition duration-500 group-hover:scale-102"
-                    />
-                    <span className="absolute bottom-2 left-2 bg-stone-950/90 text-white text-[9px] font-medium tracking-widest uppercase px-2 py-0.5">
-                      {eras.find(e => e.code === item.era)?.fr}
-                    </span>
-                    <span className="absolute bottom-2 right-2 bg-stone-200/90 text-stone-800 text-[9px] font-medium px-2 py-0.5 uppercase tracking-widest">
-                      {nationalities.find(n => n.code === item.nationality)?.fr}
-                    </span>
-                  </div>
-
-                  <div className="p-6">
-                    <div className="text-[9px] font-bold text-stone-400 uppercase tracking-widest mb-1">
-                      {categories.find(c => c.code === item.category)?.fr}
+              return (
+                <article
+                  key={item.id}
+                  onClick={() => { setSelectedItem(item); setActiveImageIdx(0); }}
+                  className={`border border-stone-200 bg-white hover:border-stone-400 transition-all duration-300 flex flex-col justify-between relative cursor-pointer group rounded-sm ${isSold ? "opacity-65" : ""}`}
+                >
+                  {/* Menu admin rapide pour modifier le statut ou supprimer (visible si déverrouillé) */}
+                  {isUnlocked && (
+                    <div className="absolute top-2 left-2 right-2 flex justify-between gap-1 z-10" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => handleUpdateStatus(item.id, "available")}
+                          className={`text-[9px] px-1.5 py-0.5 rounded border transition ${item.status === "available" ? "bg-stone-800 text-white border-stone-800" : "bg-white text-stone-600 border-stone-200"}`}
+                        >
+                          Dispo
+                        </button>
+                        <button
+                          onClick={() => handleUpdateStatus(item.id, "reserved")}
+                          className={`text-[9px] px-1.5 py-0.5 rounded border transition ${item.status === "reserved" ? "bg-amber-600 text-white border-amber-600" : "bg-white text-stone-600 border-stone-200"}`}
+                        >
+                          Réserve
+                        </button>
+                        <button
+                          onClick={() => handleUpdateStatus(item.id, "sold")}
+                          className={`text-[9px] px-1.5 py-0.5 rounded border transition ${item.status === "sold" ? "bg-red-600 text-white border-red-600" : "bg-white text-stone-600 border-stone-200"}`}
+                        >
+                          Vendu
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteItem(item.id)}
+                        className="bg-red-700 text-white text-[9px] px-2 py-0.5 rounded hover:bg-red-800"
+                      >
+                        Supr.
+                      </button>
                     </div>
-                    <h3 className="text-base font-serif text-stone-900 leading-snug mb-2 group-hover:text-stone-700 transition">
-                      {lang === "fr" ? item.title_fr : item.title_en}
-                    </h3>
-                    <p className="text-xs text-stone-500 line-clamp-3 leading-relaxed">
-                      {lang === "fr" ? item.description_fr : item.description_en}
-                    </p>
-                  </div>
-                </div>
+                  )}
 
-                <div className="p-6 pt-0">
-                  <div className="pt-4 border-t border-stone-100 flex justify-between items-center">
-                    <span className="text-base font-mono font-bold text-stone-950">{item.price} €</span>
-                    <span className="text-stone-400 text-xs group-hover:text-stone-700 transition">{lang === "fr" ? "Détails" : "Details"} →</span>
+                  <div>
+                    <div className="aspect-video w-full bg-stone-50 relative overflow-hidden border-b border-stone-200">
+                      <img
+                        src={item.images[0]}
+                        alt={lang === "fr" ? item.title_fr : item.title_en}
+                        className="object-cover w-full h-full transition duration-500 group-hover:scale-102"
+                      />
+                      
+                      {/* Badge Statut */}
+                      {isSold && (
+                        <div className="absolute inset-0 bg-stone-900/40 flex items-center justify-center">
+                          <span className="bg-red-600 text-white font-serif text-sm tracking-widest uppercase px-4 py-1.5 border border-white">
+                            {lang === "fr" ? "VENDU" : "SOLD"}
+                          </span>
+                        </div>
+                      )}
+                      
+                      {isReserved && !isSold && (
+                        <div className="absolute inset-0 bg-amber-900/10 flex items-center justify-center">
+                          <span className="bg-amber-600 text-white font-serif text-sm tracking-widest uppercase px-4 py-1.5 border border-white">
+                            {lang === "fr" ? "RÉSERVÉ" : "RESERVED"}
+                          </span>
+                        </div>
+                      )}
+
+                      <span className="absolute bottom-2 left-2 bg-stone-950/90 text-white text-[9px] font-medium tracking-widest uppercase px-2 py-0.5">
+                        {eras.find(e => e.code === item.era)?.fr}
+                      </span>
+                      <span className="absolute bottom-2 right-2 bg-stone-200/90 text-stone-800 text-[9px] font-medium px-2 py-0.5 uppercase tracking-widest">
+                        {nationalities.find(n => n.code === item.nationality)?.fr}
+                      </span>
+                    </div>
+
+                    <div className="p-6">
+                      <div className="text-[9px] font-bold text-stone-400 uppercase tracking-widest mb-1">
+                        {categories.find(c => c.code === item.category)?.fr}
+                      </div>
+                      <h3 className="text-base font-serif text-stone-900 leading-snug mb-2 group-hover:text-stone-700 transition">
+                        {lang === "fr" ? item.title_fr : item.title_en}
+                      </h3>
+                      <p className="text-xs text-stone-500 line-clamp-3 leading-relaxed">
+                        {lang === "fr" ? item.description_fr : item.description_en}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </article>
-            ))}
+
+                  <div className="p-6 pt-0">
+                    <div className="pt-4 border-t border-stone-100 flex justify-between items-center">
+                      <span className="text-base font-mono font-bold text-stone-950">{item.price} €</span>
+                      <span className="text-stone-400 text-xs group-hover:text-stone-700 transition">{lang === "fr" ? "Détails" : "Details"} →</span>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </main>
 
-      {/* Pop-up / Modal Fiche Détaillée */}
+      {/* Pop-up Fiche Détaillée */}
       {selectedItem && (
         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white max-w-4xl w-full max-h-[90vh] overflow-y-auto rounded-sm border border-stone-200 shadow-2xl flex flex-col md:flex-row">
@@ -606,9 +689,21 @@ export default function Home() {
             <div className="md:w-1/2 p-8 flex flex-col justify-between">
               <div>
                 <div className="flex justify-between items-start mb-4">
-                  <span className="text-[10px] bg-stone-100 text-stone-600 px-2.5 py-1 uppercase tracking-widest font-semibold">
-                    {categories.find(c => c.code === selectedItem.category)?.fr}
-                  </span>
+                  <div className="flex gap-1">
+                    <span className="text-[10px] bg-stone-100 text-stone-600 px-2.5 py-1 uppercase tracking-widest font-semibold">
+                      {categories.find(c => c.code === selectedItem.category)?.fr}
+                    </span>
+                    {selectedItem.status === "sold" && (
+                      <span className="text-[10px] bg-red-100 text-red-700 px-2.5 py-1 uppercase tracking-widest font-semibold">
+                        Vendu / Sold
+                      </span>
+                    )}
+                    {selectedItem.status === "reserved" && (
+                      <span className="text-[10px] bg-amber-100 text-amber-700 px-2.5 py-1 uppercase tracking-widest font-semibold">
+                        Réservé / Reserved
+                      </span>
+                    )}
+                  </div>
                   <button
                     onClick={() => setSelectedItem(null)}
                     className="text-stone-400 hover:text-stone-700 text-lg transition"
@@ -657,12 +752,18 @@ export default function Home() {
 
               <div className="pt-6 border-t border-stone-200 mt-6 flex justify-between items-center">
                 <span className="text-2xl font-mono font-bold text-stone-950">{selectedItem.price} €</span>
-                <a
-                  href={`mailto:cedric-timer@orange.fr?subject=Interet pour l'objet : ${selectedItem.title_fr}`}
-                  className="bg-stone-900 text-white hover:bg-stone-800 py-2.5 px-6 tracking-wider uppercase text-xs font-semibold rounded-xs transition"
-                >
-                  {lang === "fr" ? "Nous contacter" : "Contact us"}
-                </a>
+                {selectedItem.status === "available" ? (
+                  <a
+                    href={`mailto:votre-email@example.com?subject=Interet pour l'objet : ${selectedItem.title_fr}`}
+                    className="bg-stone-900 text-white hover:bg-stone-800 py-2.5 px-6 tracking-wider uppercase text-xs font-semibold rounded-xs transition"
+                  >
+                    {lang === "fr" ? "Nous contacter" : "Contact us"}
+                  </a>
+                ) : (
+                  <span className="text-stone-400 text-xs italic tracking-wider uppercase font-semibold">
+                    {selectedItem.status === "sold" ? (lang === "fr" ? "Objet Vendu" : "Sold Item") : (lang === "fr" ? "Pièce Réservée" : "Reserved Item")}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -670,16 +771,70 @@ export default function Home() {
         </div>
       )}
 
+      {/* Pop-up pour les MENTIONS LÉGALES */}
+      {showLegal && (
+        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white max-w-2xl w-full p-8 rounded-sm border border-stone-200 shadow-2xl relative max-h-[80vh] overflow-y-auto">
+            <button
+              onClick={() => setShowLegal(false)}
+              className="absolute top-4 right-4 text-stone-400 hover:text-stone-700 text-lg"
+            >
+              ✕
+            </button>
+            <h3 className="text-xl font-serif text-stone-900 mb-6 border-b pb-2 uppercase tracking-wide">
+              {lang === "fr" ? "Mentions Légales & Réglementation" : "Legal Notices & Terms"}
+            </h3>
+            
+            <div className="space-y-4 text-xs text-stone-600 leading-relaxed">
+              <div>
+                <h4 className="font-bold text-stone-800 uppercase mb-1">1. Édition du site</h4>
+                <p>Le site <strong>CedMilitaria US</strong> est édité à titre individuel par un collectionneur et antiquaire indépendant d'objets historiques militaires. Pour toute demande ou question, vous pouvez nous contacter directement via l'adresse de contact présente sur le site.</p>
+              </div>
+              <div>
+                <h4 className="font-bold text-stone-800 uppercase mb-1">2. Hébergement</h4>
+                <p>Le site est hébergé par la société <strong>Vercel Inc.</strong>, située au 340 S Lemon Ave #4133 Walnut, CA 91789, USA. Les données de la galerie d'exposition sont stockées sur la plateforme sécurisée <strong>Supabase Inc.</strong>.</p>
+              </div>
+              <div>
+                <h4 className="font-bold text-stone-800 uppercase mb-1">3. Nature de l'activité et transactions</h4>
+                <p>CedMilitaria US est un site d'exposition d'antiquités militaires. Les transactions ne s'effectuent pas de manière automatisée sur ce site. Tout achat ou offre d'acquisition fait l'objet d'une mise en relation directe par email, et la vente est finalisée par des méthodes de paiement externes convenues d'un commun accord (PayPal, virement bancaire).</p>
+              </div>
+              <div>
+                <h4 className="font-bold text-stone-800 uppercase mb-1">4. Réglementation sur les armes de collection</h4>
+                <p>Les armes présentées sur ce site, le cas échéant, sont strictement classées en catégorie D (vente libre aux personnes majeures) et sont neutralisées conformément aux lois et réglementations en vigueur. Les numéros de certificats officiels de neutralisation sont mentionnés de manière explicite sur chaque fiche technique concernée.</p>
+              </div>
+              <div>
+                <h4 className="font-bold text-stone-800 uppercase mb-1">5. Protection des données (RGPD)</h4>
+                <p>Le site ne collecte aucun cookie publicitaire ni données personnelles à votre insu. Les seules informations reçues le sont par le biais de la prise de contact volontaire par email.</p>
+              </div>
+            </div>
+            
+            <button
+              onClick={() => setShowLegal(false)}
+              className="mt-8 w-full bg-stone-900 hover:bg-stone-800 text-white text-xs py-2 uppercase tracking-wider font-semibold rounded-xs"
+            >
+              {lang === "fr" ? "Fermer les mentions" : "Close Notices"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Pied de page */}
-      <footer className="bg-stone-950 text-stone-500 text-xs py-16 border-t border-stone-800">
+      <footer className="bg-stone-950 text-stone-500 text-xs py-16 border-t border-stone-800 mt-12">
         <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-6 text-center md:text-left">
           <div>
             <p className="font-serif text-stone-200 uppercase tracking-widest text-sm mb-1">CedMilitaria US</p>
             <p className="text-stone-600">{lang === "fr" ? "Achat, vente et expertise d'antiquités militaires historiques." : "Purchase, sale, and appraisal of historical military antiquities."}</p>
           </div>
-          <div>
+          <div className="flex gap-4 items-center">
+            <button
+              onClick={() => setShowLegal(true)}
+              className="text-stone-500 hover:text-stone-300 underline text-xs cursor-pointer bg-transparent border-0"
+            >
+              {lang === "fr" ? "Mentions Légales & Réglementation" : "Legal Notices & Regulation"}
+            </button>
+            <span className="text-stone-800">|</span>
             <p className="text-stone-700">
-              {lang === "fr" ? "© Tous droits réservés. CedMilitaria US." : "© All rights reserved. CedMilitaria US."}
+              © {new Date().getFullYear()} CedMilitaria US.
             </p>
           </div>
         </div>
