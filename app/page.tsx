@@ -3,6 +3,14 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 
+interface SubItem {
+  nameFr: string;
+  nameEn: string;
+  conditionFr: string;
+  conditionEn: string;
+  markings: string;
+}
+
 interface MilitariaItem {
   id: string;
   created_at?: string;
@@ -19,6 +27,8 @@ interface MilitariaItem {
   certificate_number?: string;
   images: string[];
   status: "available" | "reserved" | "sold";
+  is_lot: boolean;
+  lot_content: SubItem[];
 }
 
 export default function Home() {
@@ -53,6 +63,10 @@ export default function Home() {
   const [newCondition, setNewCondition] = useState("");
   const [newCertNumber, setNewCertNumber] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
+
+  // Gestion du lot dynamique
+  const [isLot, setIsLot] = useState(false);
+  const [lotContent, setLotContent] = useState<SubItem[]>([]);
 
   const fetchItems = async () => {
     setIsLoading(true);
@@ -124,11 +138,13 @@ export default function Home() {
       era: newEra,
       nationality: newNationality,
       category: newCategory,
-      markings: newMarkings,
-      condition: newCondition,
+      markings: isLot ? "" : newMarkings,
+      condition: isLot ? "" : newCondition,
       certificate_number: newCertNumber,
       images: imageUrls.length > 0 ? imageUrls : ["https://images.unsplash.com/photo-1508614589041-895b88991e3e?auto=format&fit=crop&w=600&q=80"],
-      status: "available"
+      status: "available",
+      is_lot: isLot,
+      lot_content: isLot ? lotContent : []
     };
 
     const { error } = await supabase.from("items").insert([newItem]);
@@ -136,7 +152,7 @@ export default function Home() {
     if (error) {
       alert("Erreur de publication : " + error.message);
     } else {
-      alert("L'objet a été publié avec succès !");
+      alert("L'objet ou le lot a été publié avec succès !");
       setNewTitleFr("");
       setNewTitleEn("");
       setNewDescFr("");
@@ -146,12 +162,31 @@ export default function Home() {
       setNewCondition("");
       setNewCertNumber("");
       setSelectedFiles(null);
+      setIsLot(false);
+      setLotContent([]);
       fetchItems();
     }
     setIsSubmitting(false);
   };
 
-  // Se connecter via code simple
+  // Ajouter un sous-objet vide au lot
+  const addSubItemField = () => {
+    setLotContent([...lotContent, { nameFr: "", nameEn: "", conditionFr: "", conditionEn: "", markings: "" }]);
+  };
+
+  // Supprimer un sous-objet du lot
+  const removeSubItemField = (index: number) => {
+    const updated = lotContent.filter((_, idx) => idx !== index);
+    setLotContent(updated);
+  };
+
+  // Mettre à jour un champ spécifique d'un sous-objet
+  const updateSubItemField = (index: number, field: keyof SubItem, value: string) => {
+    const updated = [...lotContent];
+    updated[index][field] = value;
+    setLotContent(updated);
+  };
+
   const handleUnlockAdmin = (e: React.FormEvent) => {
     e.preventDefault();
     if (adminPassword === "cedric123") {
@@ -166,7 +201,6 @@ export default function Home() {
     setIsUnlocked(false);
   };
 
-  // Mettre à jour le statut d'un objet (Disponible, Réservé, Vendu)
   const handleUpdateStatus = async (id: string, status: MilitariaItem["status"]) => {
     const { error } = await supabase
       .from("items")
@@ -277,7 +311,7 @@ export default function Home() {
           <p className="text-stone-600 text-sm leading-relaxed max-w-2xl mx-auto font-sans">
             {lang === "fr" 
               ? "CedMilitaria US est spécialisé dans le négoce d'antiquités militaires d'époque. Parcourez notre catalogue pour acquérir des objets garantis d'origine. Nous sommes également acheteurs : si vous souhaitez nous proposer à la vente un objet historique ou une collection complète, contactez-nous."
-              : "CedMilitaria US specializes in the trade of genuine vintage military antiquities. Browse our catalog to acquire guaranteed original items. We are also active buyers: if you wish to offer us a historical object or an entire collection for purchase, please get in touch."}
+              : "CedMilitaria US specializes in the trade of genuine vintage military antiques. Browse our catalog to acquire guaranteed original items. We are also active buyers: if you wish to offer us a historical object or an entire collection for purchase, please get in touch."}
           </p>
           <div className="h-px bg-stone-300 w-16 mx-auto mt-8"></div>
         </div>
@@ -309,13 +343,12 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Module Administration Sécurisé par code */}
+      {/* Module Administration */}
       {isAdminMode && (
         <section className="bg-stone-100 border-b border-stone-200 p-6">
           <div className="max-w-3xl mx-auto bg-white p-6 rounded-md shadow-xs border border-stone-200">
             
             {!isUnlocked ? (
-              // Formulaire d'accès simple par mot de passe
               <form onSubmit={handleUnlockAdmin} className="space-y-4">
                 <h3 className="text-sm font-bold uppercase text-stone-500 tracking-wider mb-2">
                   {lang === "fr" ? "Déverrouiller l'Espace Administrateur" : "Unlock Admin Space"}
@@ -335,7 +368,6 @@ export default function Home() {
                 </div>
               </form>
             ) : (
-              // Formulaire d'ajout (accessible uniquement si déverrouillé)
               <div>
                 <div className="flex justify-between items-center border-b pb-3 mb-4">
                   <h3 className="text-lg font-serif text-stone-800">
@@ -347,6 +379,21 @@ export default function Home() {
                 </div>
 
                 <form onSubmit={handleAddItem} className="space-y-4">
+                  
+                  {/* Option : Est-ce un lot ? */}
+                  <div className="bg-stone-50 p-3 border border-stone-200 rounded-sm flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="isLotCheck"
+                      checked={isLot}
+                      onChange={(e) => setIsLot(e.target.checked)}
+                      className="w-4 h-4 accent-stone-850"
+                    />
+                    <label htmlFor="isLotCheck" className="text-xs font-bold uppercase text-stone-700 cursor-pointer">
+                      {lang === "fr" ? "Cet article est un LOT groupé d'objets différents" : "This article is a grouped LOT of different items"}
+                    </label>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Titre (Français)</label>
@@ -355,7 +402,7 @@ export default function Home() {
                         value={newTitleFr}
                         onChange={(e) => setNewTitleFr(e.target.value)}
                         className="w-full border border-stone-300 p-2 text-sm"
-                        placeholder="Ex: Casque Allemand M42..."
+                        placeholder="Ex: Lot de paquetage d'un GI américain..."
                       />
                     </div>
                     <div>
@@ -365,33 +412,35 @@ export default function Home() {
                         value={newTitleEn}
                         onChange={(e) => setNewTitleEn(e.target.value)}
                         className="w-full border border-stone-300 p-2 text-sm"
-                        placeholder="Ex: German M42 Helmet..."
+                        placeholder="Ex: US Soldier Gear Grouping..."
                       />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Description (Français)</label>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Description Générale (Français)</label>
                       <textarea
                         value={newDescFr}
                         onChange={(e) => setNewDescFr(e.target.value)}
                         className="w-full border border-stone-300 p-2 text-sm h-20"
+                        placeholder="Présentation générale du lot historique..."
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Description (English)</label>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">General Description (English)</label>
                       <textarea
                         value={newDescEn}
                         onChange={(e) => setNewDescEn(e.target.value)}
                         className="w-full border border-stone-300 p-2 text-sm h-20"
+                        placeholder="General historical grouping details..."
                       />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div>
-                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Prix (€)</label>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Prix Global du Lot (€)</label>
                       <input
                         type="number"
                         value={newPrice}
@@ -413,7 +462,7 @@ export default function Home() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Nationalité</label>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Nationalité dominante</label>
                       <select
                         value={newNationality}
                         onChange={(e) => setNewNationality(e.target.value as MilitariaItem["nationality"])}
@@ -426,10 +475,10 @@ export default function Home() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Équipement</label>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Équipement principal</label>
                       <select
                         value={newCategory}
-                        onChange={(e) => setNewCategory(e.target.value as MilitariaItem["category"])}
+                        onChange={(e) => setNewCategory(newCategory)}
                         className="w-full border border-stone-300 p-2 text-sm"
                       >
                         <option value="HELMET">Casque / Coiffure</option>
@@ -442,41 +491,120 @@ export default function Home() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Marquages / Fabricant</label>
-                      <input
-                        type="text"
-                        value={newMarkings}
-                        onChange={(e) => setNewMarkings(e.target.value)}
-                        className="w-full border border-stone-300 p-2 text-sm"
-                        placeholder="Ex: Q66, McCord..."
-                      />
+                  {/* FORMULAIRE CLASSIQUE (Si ce n'est pas un lot) */}
+                  {!isLot ? (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Marquages / Fabricant</label>
+                        <input
+                          type="text"
+                          value={newMarkings}
+                          onChange={(e) => setNewMarkings(e.target.value)}
+                          className="w-full border border-stone-300 p-2 text-sm"
+                          placeholder="Ex: Q66, McCord..."
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold uppercase text-stone-500 mb-1">État de conservation</label>
+                        <input
+                          type="text"
+                          value={newCondition}
+                          onChange={(e) => setNewCondition(e.target.value)}
+                          className="w-full border border-stone-300 p-2 text-sm"
+                          placeholder="Ex: Excellent, Mint, Combat Wear..."
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold uppercase text-stone-500 mb-1">N° de Certificat (Armes neut.)</label>
+                        <input
+                          type="text"
+                          value={newCertNumber}
+                          onChange={(e) => setNewCertNumber(e.target.value)}
+                          className="w-full border border-stone-300 p-2 text-sm"
+                          placeholder="Ex: St-Etienne 4287..."
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">État de conservation</label>
-                      <input
-                        type="text"
-                        value={newCondition}
-                        onChange={(e) => setNewCondition(e.target.value)}
-                        className="w-full border border-stone-300 p-2 text-sm"
-                        placeholder="Ex: Excellent, Mint, Combat Wear..."
-                      />
+                  ) : (
+                    // FORMULAIRE DYNAMIQUE DE LOT (Si coché)
+                    <div className="border border-stone-200 bg-stone-50 p-4 rounded-sm space-y-4">
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-xs font-bold text-stone-700 uppercase">Composition détaillée du lot</span>
+                        <button
+                          type="button"
+                          onClick={addSubItemField}
+                          className="text-xs bg-stone-800 text-white px-3 py-1 hover:bg-stone-700 transition"
+                        >
+                          + Ajouter un objet au lot
+                        </button>
+                      </div>
+
+                      {lotContent.length === 0 ? (
+                        <p className="text-xs text-stone-500 text-center py-4 italic">Aucun objet ajouté pour l'instant. Cliquez ci-dessus pour composer votre lot.</p>
+                      ) : (
+                        <div className="space-y-4">
+                          {lotContent.map((sub, idx) => (
+                            <div key={idx} className="bg-white p-3 border border-stone-200 rounded-sm relative space-y-3">
+                              <button
+                                type="button"
+                                onClick={() => removeSubItemField(idx)}
+                                className="absolute top-2 right-2 text-red-600 font-bold text-xs hover:underline"
+                              >
+                                Supprimer ✕
+                              </button>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                                <input
+                                  type="text"
+                                  placeholder="Nom de l'objet (FR) - Ex: Casque M1"
+                                  value={sub.nameFr}
+                                  onChange={(e) => updateSubItemField(idx, "nameFr", e.target.value)}
+                                  className="border p-2 text-xs w-full"
+                                  required
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Item Name (EN) - Ex: M1 Helmet"
+                                  value={sub.nameEn}
+                                  onChange={(e) => updateSubItemField(idx, "nameEn", e.target.value)}
+                                  className="border p-2 text-xs w-full"
+                                  required
+                                />
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <input
+                                  type="text"
+                                  placeholder="État de conservation (FR) - Ex: Très bon"
+                                  value={sub.conditionFr}
+                                  onChange={(e) => updateSubItemField(idx, "conditionFr", e.target.value)}
+                                  className="border p-2 text-xs w-full"
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Condition (EN) - Ex: Very Good"
+                                  value={sub.conditionEn}
+                                  onChange={(e) => updateSubItemField(idx, "conditionEn", e.target.value)}
+                                  className="border p-2 text-xs w-full"
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Marquages / Fabricant - Ex: McCord"
+                                  value={sub.markings}
+                                  onChange={(e) => updateSubItemField(idx, "markings", e.target.value)}
+                                  className="border p-2 text-xs w-full"
+                                />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">N° de Certificat (Armes neut.)</label>
-                      <input
-                        type="text"
-                        value={newCertNumber}
-                        onChange={(e) => setNewCertNumber(e.target.value)}
-                        className="w-full border border-stone-300 p-2 text-sm"
-                        placeholder="Ex: St-Etienne 4287..."
-                      />
-                    </div>
-                  </div>
+                  )}
 
                   <div>
-                    <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Photos de l'objet (Max 3, Haute définition)</label>
+                    {/* Limite augmentée à 10 images */}
+                    <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Photos du lot ou de l'objet (Jusqu'à 10 photos, Haute définition)</label>
                     <input
                       type="file"
                       accept="image/*"
@@ -491,7 +619,7 @@ export default function Home() {
                     disabled={isSubmitting}
                     className="w-full bg-stone-900 text-white py-2 hover:bg-stone-800 transition text-sm tracking-wider uppercase font-medium disabled:bg-stone-400"
                   >
-                    {isSubmitting ? "Publication en cours..." : "Mettre l'objet en vente"}
+                    {isSubmitting ? "Publication en cours..." : "Mettre l'objet ou le lot en vente"}
                   </button>
                 </form>
               </div>
@@ -569,7 +697,6 @@ export default function Home() {
                   onClick={() => { setSelectedItem(item); setActiveImageIdx(0); }}
                   className={`border border-stone-200 bg-white hover:border-stone-400 transition-all duration-300 flex flex-col justify-between relative cursor-pointer group rounded-sm ${isSold ? "opacity-65" : ""}`}
                 >
-                  {/* Menu admin rapide pour modifier le statut ou supprimer (visible si déverrouillé) */}
                   {isUnlocked && (
                     <div className="absolute top-2 left-2 right-2 flex justify-between gap-1 z-10" onClick={(e) => e.stopPropagation()}>
                       <div className="flex gap-1">
@@ -624,6 +751,13 @@ export default function Home() {
                             {lang === "fr" ? "RÉSERVÉ" : "RESERVED"}
                           </span>
                         </div>
+                      )}
+
+                      {/* Badge de Lot sur la miniature */}
+                      {item.is_lot && (
+                        <span className="absolute top-2 left-2 bg-amber-600 text-white text-[9px] font-bold tracking-widest uppercase px-2 py-0.5 rounded-xs z-10">
+                          {lang === "fr" ? "LOT" : "LOT"}
+                        </span>
                       )}
 
                       <span className="absolute bottom-2 left-2 bg-stone-950/90 text-white text-[9px] font-medium tracking-widest uppercase px-2 py-0.5">
@@ -693,6 +827,11 @@ export default function Home() {
                     <span className="text-[10px] bg-stone-100 text-stone-600 px-2.5 py-1 uppercase tracking-widest font-semibold">
                       {categories.find(c => c.code === selectedItem.category)?.fr}
                     </span>
+                    {selectedItem.is_lot && (
+                      <span className="text-[10px] bg-amber-100 text-amber-700 px-2.5 py-1 uppercase tracking-widest font-bold">
+                        LOT
+                      </span>
+                    )}
                     {selectedItem.status === "sold" && (
                       <span className="text-[10px] bg-red-100 text-red-700 px-2.5 py-1 uppercase tracking-widest font-semibold">
                         Vendu / Sold
@@ -720,34 +859,62 @@ export default function Home() {
                   {lang === "fr" ? selectedItem.description_fr : selectedItem.description_en}
                 </p>
 
-                <div className="bg-stone-50 p-4 border border-stone-200 rounded-sm space-y-2 text-xs text-stone-700">
-                  <div className="flex justify-between border-b border-stone-200 pb-1.5">
-                    <span className="font-bold uppercase text-stone-400 text-[9px] tracking-wider">{lang === "fr" ? "Époque" : "Era"}</span>
-                    <span>{eras.find(e => e.code === selectedItem.era)?.fr}</span>
+                {/* Si c'est un LOT : Affichage de la table de composition détaillée */}
+                {selectedItem.is_lot && selectedItem.lot_content && selectedItem.lot_content.length > 0 ? (
+                  <div className="mb-6">
+                    <h4 className="text-[10px] font-bold uppercase text-stone-400 tracking-wider mb-2">{lang === "fr" ? "Composition détaillée du lot" : "Lot Content details"}</h4>
+                    <div className="border border-stone-200 rounded-sm overflow-hidden text-xs">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-stone-100 text-stone-500 font-bold border-b border-stone-200">
+                            <th className="p-2">{lang === "fr" ? "Objet" : "Item"}</th>
+                            <th className="p-2">{lang === "fr" ? "État" : "Condition"}</th>
+                            <th className="p-2">{lang === "fr" ? "Marquages" : "Markings"}</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-100 text-stone-700 bg-white">
+                          {selectedItem.lot_content.map((sub, idx) => (
+                            <tr key={idx}>
+                              <td className="p-2 font-medium">{lang === "fr" ? sub.nameFr : sub.nameEn}</td>
+                              <td className="p-2 text-stone-500">{lang === "fr" ? sub.conditionFr : sub.conditionEn}</td>
+                              <td className="p-2 font-mono text-stone-500">{sub.markings || "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                  <div className="flex justify-between border-b border-stone-200 pb-1.5">
-                    <span className="font-bold uppercase text-stone-400 text-[9px] tracking-wider">{lang === "fr" ? "Origine" : "Nationality"}</span>
-                    <span>{nationalities.find(n => n.code === selectedItem.nationality)?.fr}</span>
+                ) : (
+                  // Si c'est un article CLASSIQUE : Affichage de la boîte technique classique
+                  <div className="bg-stone-50 p-4 border border-stone-200 rounded-sm space-y-2 text-xs text-stone-700">
+                    <div className="flex justify-between border-b border-stone-200 pb-1.5">
+                      <span className="font-bold uppercase text-stone-400 text-[9px] tracking-wider">{lang === "fr" ? "Époque" : "Era"}</span>
+                      <span>{eras.find(e => e.code === selectedItem.era)?.fr}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-stone-200 pb-1.5">
+                      <span className="font-bold uppercase text-stone-400 text-[9px] tracking-wider">{lang === "fr" ? "Origine" : "Nationality"}</span>
+                      <span>{nationalities.find(n => n.code === selectedItem.nationality)?.fr}</span>
+                    </div>
+                    {selectedItem.markings && (
+                      <div className="flex justify-between border-b border-stone-200 pb-1.5">
+                        <span className="font-bold uppercase text-stone-400 text-[9px] tracking-wider">{lang === "fr" ? "Marquages" : "Markings"}</span>
+                        <span className="font-mono text-stone-900 font-semibold">{selectedItem.markings}</span>
+                      </div>
+                    )}
+                    {selectedItem.condition && (
+                      <div className="flex justify-between border-b border-stone-200 pb-1.5">
+                        <span className="font-bold uppercase text-stone-400 text-[9px] tracking-wider">{lang === "fr" ? "État de cons." : "Condition"}</span>
+                        <span className="text-stone-900 font-semibold">{selectedItem.condition}</span>
+                      </div>
+                    )}
+                    {selectedItem.certificate_number && (
+                      <div className="flex justify-between text-amber-900 bg-amber-50 p-1.5 rounded-xs">
+                        <span className="font-bold uppercase text-[9px] tracking-wider">{lang === "fr" ? "Certificat" : "Certificate"}</span>
+                        <span className="font-mono font-semibold">{selectedItem.certificate_number}</span>
+                      </div>
+                    )}
                   </div>
-                  {selectedItem.markings && (
-                    <div className="flex justify-between border-b border-stone-200 pb-1.5">
-                      <span className="font-bold uppercase text-stone-400 text-[9px] tracking-wider">{lang === "fr" ? "Marquages" : "Markings"}</span>
-                      <span className="font-mono text-stone-900 font-semibold">{selectedItem.markings}</span>
-                    </div>
-                  )}
-                  {selectedItem.condition && (
-                    <div className="flex justify-between border-b border-stone-200 pb-1.5">
-                      <span className="font-bold uppercase text-stone-400 text-[9px] tracking-wider">{lang === "fr" ? "État de cons." : "Condition"}</span>
-                      <span className="text-stone-900 font-semibold">{selectedItem.condition}</span>
-                    </div>
-                  )}
-                  {selectedItem.certificate_number && (
-                    <div className="flex justify-between text-amber-900 bg-amber-50 p-1.5 rounded-xs">
-                      <span className="font-bold uppercase text-[9px] tracking-wider">{lang === "fr" ? "Certificat" : "Certificate"}</span>
-                      <span className="font-mono font-semibold">{selectedItem.certificate_number}</span>
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
 
               <div className="pt-6 border-t border-stone-200 mt-6 flex justify-between items-center">
