@@ -62,11 +62,12 @@ export default function Home() {
   const [selectedConvoId, setSelectedConvoId] = useState<string | null>(null);
   const [adminReplyText, setAdminReplyText] = useState("");
 
-  // Messagerie Acheteur (Chat localisé)
+  // Messagerie Acheteur
   const [activeChatConvoId, setActiveChatConvoId] = useState<string | null>(null);
   const [buyerName, setBuyerName] = useState("");
   const [buyerNewMessage, setBuyerNewMessage] = useState("");
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [showGeneralChatModal, setShowGeneralChatModal] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // États de filtrage & Recherche textuelle
@@ -110,7 +111,7 @@ export default function Home() {
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.error("Erreur récupération objets :", error.message);
+      console.error("Erreur de récupération :", error.message);
     } else {
       setItems(data || []);
     }
@@ -132,7 +133,6 @@ export default function Home() {
 
   useEffect(() => {
     fetchItems();
-    // Actualisation automatique des messages du chat toutes les 4 secondes
     const interval = setInterval(() => {
       fetchAllMessages();
     }, 4000);
@@ -148,10 +148,9 @@ export default function Home() {
     fetchAllMessages();
   }, []);
 
-  // Scroll automatique au bas du chat lors d'un nouveau message
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, selectedConvoId, selectedItem]);
+  }, [messages, selectedConvoId, selectedItem, showGeneralChatModal]);
 
   // Charger le brouillon de saisie s'il existe
   useEffect(() => {
@@ -355,22 +354,22 @@ export default function Home() {
     setIsSubmitting(false);
   };
 
-  // Envoyer un message (Acheteur)
-  const handleSendBuyerMessage = async (e: React.FormEvent) => {
+  // ENVOYER UN MESSAGE DEPUIS LE CHAT PUBLIC (Acheteur)
+  const handleSendBuyerMessage = async (e: React.FormEvent, isGeneral: boolean = false) => {
     e.preventDefault();
     if (!buyerNewMessage || (!activeChatConvoId && !buyerName)) {
       alert("Veuillez indiquer votre nom et votre message.");
       return;
     }
 
-    setIsSubmittingMessage(true);
+    setIsSendingMessage(true);
     const convoId = activeChatConvoId || `convo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const finalName = buyerName || "Visiteur anonyme";
 
     const newMessage = {
       conversation_id: convoId,
-      item_id: selectedItem?.id || null,
-      item_title: selectedItem ? selectedItem.title_fr : "Contact Général",
+      item_id: isGeneral ? null : (selectedItem?.id || null),
+      item_title: isGeneral ? "Achat de Collection" : (selectedItem ? selectedItem.title_fr : "Contact Général"),
       sender_role: "buyer",
       sender_name: finalName,
       message_text: buyerNewMessage,
@@ -387,16 +386,15 @@ export default function Home() {
       setActiveChatConvoId(convoId);
       fetchAllMessages();
     }
-    setIsSubmittingMessage(false);
+    setIsSendingMessage(false);
   };
 
-  // Répondre à un fil (Admin connecté)
+  // RÉPONDRE À UN FIL (Admin connecté)
   const handleSendAdminReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adminReplyText || !selectedConvoId) return;
 
     const currentConvoMessages = messages.filter(m => m.conversation_id === selectedConvoId);
-    const buyerNameFromConvo = currentConvoMessages.find(m => m.sender_role === "buyer")?.sender_name || "Acheteur";
     const itemIdFromConvo = currentConvoMessages[0]?.item_id || null;
     const itemTitleFromConvo = currentConvoMessages[0]?.item_title || "Demande";
 
@@ -472,7 +470,7 @@ export default function Home() {
       .eq("id", id);
 
     if (error) {
-      alert("Erreur de statut : " + error.message);
+      alert("Erreur : " + error.message);
     } else {
       fetchItems();
     }
@@ -526,7 +524,6 @@ export default function Home() {
     { code: "OTHER", fr: "Divers Militaria", en: "Other Militaria" },
   ];
 
-  // Filtrage du catalogue public et récupération des brouillons réels de la DB
   const publicItems = items.filter(item => item.status !== "draft");
   const draftItems = items.filter(item => item.status === "draft");
 
@@ -543,7 +540,6 @@ export default function Home() {
     return matchEra && matchNat && matchCat && matchText;
   });
 
-  // Groupement des messages de chat par ID de conversation pour l'affichage Admin
   const conversationsMap = new Map<string, ChatMessage[]>();
   messages.forEach(msg => {
     if (!conversationsMap.has(msg.conversation_id)) {
@@ -630,7 +626,7 @@ export default function Home() {
               </p>
             </div>
             <button
-              onClick={() => { setSelectedItem(null); setActiveChatConvoId(localStorage.getItem("cedmilitaria_active_convo_id") || null); }}
+              onClick={() => { setSelectedItem(null); setShowGeneralChatModal(true); }}
               className="bg-stone-900 text-white hover:bg-stone-800 self-center py-2.5 px-12 tracking-wider uppercase text-xs font-semibold rounded-xs transition"
             >
               {lang === "fr" ? "Nous proposer une collection" : "Offer us a collection"}
@@ -836,7 +832,7 @@ export default function Home() {
                         </div>
                         <div>
                           <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Équipement principal</label>
-                          {/* CORRECTION DU BUG DE SÉLECTION */}
+                          {/* SÉLECTEUR DE CATÉGORIE CORRIGÉ */}
                           <select
                             value={newCategory}
                             onChange={(e) => setNewCategory(e.target.value as MilitariaItem["category"])}
@@ -1103,7 +1099,6 @@ export default function Home() {
                     ) : (
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         
-                        {/* Liste des discussions de gauche */}
                         <div className="border border-stone-200 rounded-sm divide-y divide-stone-150 max-h-[450px] overflow-y-auto">
                           {convoList.map(([convoId, msgs]) => {
                             const lastMsg = msgs[msgs.length - 1];
@@ -1122,11 +1117,9 @@ export default function Home() {
                           })}
                         </div>
 
-                        {/* Fenêtre de Chat sélectionnée de droite */}
                         <div className="lg:col-span-2 border border-stone-200 rounded-sm bg-stone-50 flex flex-col h-[450px] justify-between">
                           {selectedConvoId ? (
                             <>
-                              {/* Fil de discussion */}
                               <div className="p-4 overflow-y-auto flex-1 space-y-3 max-h-[360px]">
                                 {messages.filter(m => m.conversation_id === selectedConvoId).map((msg) => {
                                   const isAdmin = msg.sender_role === "admin";
@@ -1142,7 +1135,6 @@ export default function Home() {
                                 <div ref={chatEndRef} />
                               </div>
 
-                              {/* Formulaire de réponse de l'admin */}
                               <form onSubmit={handleSendAdminReply} className="p-3 bg-white border-t border-stone-200 flex gap-2">
                                 <input
                                   type="text"
@@ -1153,13 +1145,13 @@ export default function Home() {
                                   required
                                 />
                                 <button type="submit" className="bg-stone-900 hover:bg-stone-850 text-white text-xs px-4 py-2 uppercase font-bold tracking-wider">
-                                  {lang === "fr" ? "Envoyer" : "Send"}
+                                  {lang === "fr" ? "Répondre" : "Reply"}
                                 </button>
                               </form>
                             </>
                           ) : (
                             <div className="flex-1 flex items-center justify-center text-xs text-stone-400 italic">
-                              {lang === "fr" ? "Sélectionnez une discussion de la liste pour répondre" : "Select a conversation to reply"}
+                              {lang === "fr" ? "Sélectionnez une discussion pour répondre" : "Select a conversation to reply"}
                             </div>
                           )}
                         </div>
@@ -1175,7 +1167,7 @@ export default function Home() {
         </section>
       )}
 
-      {/* BANDEAU DE GARANTIE D'AUTHENTICITÉ PERSONNALISÉ */}
+      {/* Bandeau de Garantie d'Authenticité */}
       <section className="bg-stone-950 text-white py-4 px-4 text-center border-y border-stone-800">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-center items-center gap-2 md:gap-6 text-[11px] tracking-widest uppercase font-serif">
           <span className="text-amber-500 font-bold">★ CedMilitaria US Guarantee ★</span>
@@ -1190,6 +1182,7 @@ export default function Home() {
       {/* Barre de recherche textuelle ET Filtres */}
       <nav className="bg-white border-b border-stone-200 py-6 px-4">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-6 items-end justify-between">
+          
           <div className="w-full md:flex-1">
             <label className="text-xs font-bold text-stone-400 uppercase block mb-1 tracking-wider">
               {lang === "fr" ? "Rechercher un objet d'époque" : "Search the catalog"}
@@ -1377,7 +1370,7 @@ export default function Home() {
                   className="object-contain w-full h-full"
                 />
               </div>
-              <div className="flex gap-2 mt-4 overflow-x-auto py-1">
+              <div className="flex gap-2 mt-4 overflow-x-auto py-1 animate-fadeIn">
                 {selectedItem.images.map((img, idx) => (
                   <button
                     key={idx}
@@ -1504,15 +1497,18 @@ export default function Home() {
 
                     {/* Zone d'affichage des messages du fil */}
                     {activeChatConvoId && (
-                      <div className="space-y-2 max-h-[120px] overflow-y-auto p-1 bg-white border border-stone-150 rounded-xs text-[11px] leading-relaxed">
-                        {messages.filter(m => m.conversation_id === activeChatConvoId).map((msg, idx) => (
-                          <div key={idx} className={`flex flex-col ${msg.sender_role === "admin" ? "items-start" : "items-end"}`}>
-                            <span className="text-[8px] text-stone-400 font-bold">{msg.sender_name}</span>
-                            <span className={`px-2 py-1 rounded-sm ${msg.sender_role === "admin" ? "bg-stone-200 text-stone-800" : "bg-stone-900 text-white"}`}>
-                              {msg.message_text}
-                            </span>
-                          </div>
-                        ))}
+                      <div className="space-y-2 max-h-[120px] overflow-y-auto p-2 bg-white border border-stone-150 rounded-xs text-[11px] leading-relaxed">
+                        {messages.filter(m => m.conversation_id === activeChatConvoId).map((msg, idx) => {
+                          const isAdmin = msg.sender_role === "admin";
+                          return (
+                            <div key={idx} className={`flex flex-col ${isAdmin ? "items-start" : "items-end"}`}>
+                              <span className="text-[8px] text-stone-400 font-bold">{msg.sender_name}</span>
+                              <span className={`px-2.5 py-1 rounded-sm ${isAdmin ? "bg-stone-200 text-stone-800" : "bg-stone-900 text-white"}`}>
+                                {msg.message_text}
+                              </span>
+                            </div>
+                          );
+                        })}
                         <div ref={chatEndRef} />
                       </div>
                     )}
@@ -1530,6 +1526,7 @@ export default function Home() {
                       )}
                       <div className="flex gap-2">
                         <input
+                          id="buyer-chat-input"
                           type="text"
                           placeholder={lang === "fr" ? "Écrivez votre message..." : "Type your message..."}
                           value={buyerNewMessage}
@@ -1555,6 +1552,69 @@ export default function Home() {
         </div>
       )}
 
+      {/* Pop-up de Discussion Générale / Rachat de Collection */}
+      {showGeneralChatModal && (
+        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white max-w-lg w-full p-6 rounded-sm border border-stone-200 shadow-2xl relative">
+            <button
+              onClick={() => setShowGeneralChatModal(false)}
+              className="absolute top-4 right-4 text-stone-400 hover:text-stone-700 text-lg"
+            >
+              ✕
+            </button>
+            <h3 className="text-lg font-serif text-stone-950 mb-4 border-b pb-2 uppercase tracking-wide">
+              {lang === "fr" ? "Proposer une collection à Cédric (Chat)" : "Propose a Collection to Cedric (Chat)"}
+            </h3>
+
+            <div className="space-y-4">
+              {activeChatConvoId && (
+                <div className="space-y-2 max-h-[200px] overflow-y-auto p-3 bg-stone-50 border border-stone-150 rounded-xs text-xs">
+                  {messages.filter(m => m.conversation_id === activeChatConvoId).map((msg, idx) => {
+                    const isAdmin = msg.sender_role === "admin";
+                    return (
+                      <div key={idx} className={`flex flex-col ${isAdmin ? "items-start" : "items-end"}`}>
+                        <span className="text-[8px] text-stone-400 font-bold">{msg.sender_name}</span>
+                        <span className={`px-2.5 py-1 rounded-sm ${isAdmin ? "bg-stone-200 text-stone-800" : "bg-stone-900 text-white"}`}>
+                          {msg.message_text}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  <div ref={chatEndRef} />
+                </div>
+              )}
+
+              <form onSubmit={(e) => handleSendBuyerMessage(e, true)} className="space-y-3 text-xs">
+                {!activeChatConvoId && (
+                  <input
+                    type="text"
+                    placeholder={lang === "fr" ? "Votre Nom complet" : "Your Full Name"}
+                    value={buyerName}
+                    onChange={(e) => setBuyerName(e.target.value)}
+                    className="border border-stone-300 p-2 w-full rounded-sm"
+                    required
+                  />
+                )}
+                <textarea
+                  placeholder={lang === "fr" ? "Décrivez brièvement votre collection ou votre objet..." : "Briefly describe your collection or object..."}
+                  value={buyerNewMessage}
+                  onChange={(e) => setBuyerNewMessage(e.target.value)}
+                  className="border border-stone-300 p-2 w-full h-24 rounded-sm focus:outline-none focus:border-stone-500"
+                  required
+                />
+                <button
+                  type="submit"
+                  disabled={isSendingMessage}
+                  className="w-full bg-stone-900 hover:bg-stone-850 text-white py-2 uppercase tracking-wider font-bold text-xs"
+                >
+                  {lang === "fr" ? "Lancer la discussion de rachat" : "Start Selling Chat"}
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Pop-up pour les MENTIONS LÉGALES */}
       {showLegal && (
         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
@@ -1575,7 +1635,7 @@ export default function Home() {
               </div>
               <div>
                 <h4 className="font-bold text-stone-800 uppercase mb-1">3. Nature de l'activité et transactions</h4>
-                <p>CedMilitaria US est un site d'exposition d'antiquités militaires. Les transactions ne s'effectuent pas de manière automatisée sur ce site. Tout achat ou offre d'acquisition fait l'objet d'une mise en relation directe par email, et la vente est finalisée par des méthodes de paiement externes convenues d'un commun accord (PayPal, virement bancaire).</p>
+                <p>CedMilitaria US est un site d'exposition d'antiquités militaires. Les transactions ne s'effectuent pas de manière automatisée sur ce site. Tout achat ou offre d'acquisition fait l'objet d'une mise en relation directe par le chat du site, et la vente est finalisée par des méthodes de paiement externes convenues d'un commun accord (PayPal, virement bancaire).</p>
               </div>
               <div>
                 <h4 className="font-bold text-stone-800 uppercase mb-1">4. Réglementation sur les armes de collection</h4>
@@ -1583,7 +1643,7 @@ export default function Home() {
               </div>
               <div>
                 <h4 className="font-bold text-stone-800 uppercase mb-1">5. Protection des données (RGPD)</h4>
-                <p>Le site ne collecte aucun cookie publicitaire ni données personnelles à votre insu. Les seules informations reçues le sont par le biais de la prise de contact volontaire par email.</p>
+                <p>Le site ne collecte aucun cookie publicitaire ni données personnelles à votre insu. Les seules informations reçues le sont par le biais de la prise de contact volontaire sur le chat du site.</p>
               </div>
             </div>
             
