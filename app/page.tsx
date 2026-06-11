@@ -96,6 +96,68 @@ export default function Home() {
     fetchItems();
   }, []);
 
+  // 1. CHARGER LE BROUILLON AUTOMATIQUE AU DÉMARRAGE S'IL EXISTE
+  useEffect(() => {
+    const savedDraft = localStorage.getItem("cedmilitaria_form_draft");
+    if (savedDraft) {
+      try {
+        const data = JSON.parse(savedDraft);
+        setNewTitleFr(data.newTitleFr || "");
+        setNewTitleEn(data.newTitleEn || "");
+        setNewDescFr(data.newDescFr || "");
+        setNewDescEn(data.newDescEn || "");
+        setNewPrice(data.newPrice || "");
+        setNewEra(data.newEra || "WW2");
+        setNewNationality(data.newNationality || "US");
+        setNewCategory(data.newCategory || "HELMET");
+        setNewMarkings(data.newMarkings || "");
+        setNewCondition(data.newCondition || "");
+        setNewCertNumber(data.newCertNumber || "");
+        setIsLot(data.isLot || false);
+        setLotContent(data.lotContent || []);
+      } catch (e) {
+        console.error("Erreur lors de la lecture du brouillon", e);
+      }
+    }
+  }, []);
+
+  // 2. ENREGISTRER LE BROUILLON EN TEMPS RÉEL À CHAQUE MODIFICATION Saisie
+  useEffect(() => {
+    if (!isUnlocked) return; // Ne pas écraser si l'admin n'est pas déverrouillé
+
+    const draftData = {
+      newTitleFr,
+      newTitleEn,
+      newDescFr,
+      newDescEn,
+      newPrice,
+      newEra,
+      newNationality,
+      newCategory,
+      newMarkings,
+      newCondition,
+      newCertNumber,
+      isLot,
+      lotContent,
+    };
+    localStorage.setItem("cedmilitaria_form_draft", JSON.stringify(draftData));
+  }, [
+    newTitleFr,
+    newTitleEn,
+    newDescFr,
+    newDescEn,
+    newPrice,
+    newEra,
+    newNationality,
+    newCategory,
+    newMarkings,
+    newCondition,
+    newCertNumber,
+    isLot,
+    lotContent,
+    isUnlocked,
+  ]);
+
   useEffect(() => {
     return () => {
       imagePreviews.forEach((img) => URL.revokeObjectURL(img.previewUrl));
@@ -112,7 +174,6 @@ export default function Home() {
         previewUrl: URL.createObjectURL(file),
       }));
 
-      // Limiter à 20 images maximum
       setImagePreviews((prev) => [...prev, ...newPreviews].slice(0, 20));
     }
   };
@@ -185,6 +246,24 @@ export default function Home() {
     return urls;
   };
 
+  // Vider le brouillon manuel (Remise à zéro)
+  const handleResetForm = () => {
+    if (confirm("Voulez-vous effacer tout le brouillon en cours ?")) {
+      setNewTitleFr("");
+      setNewTitleEn("");
+      setNewDescFr("");
+      setNewDescEn("");
+      setNewPrice("");
+      setNewMarkings("");
+      setNewCondition("");
+      setNewCertNumber("");
+      setImagePreviews([]);
+      setIsLot(false);
+      setLotContent([]);
+      localStorage.removeItem("cedmilitaria_form_draft");
+    }
+  };
+
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitleFr || !newTitleEn || !newPrice) {
@@ -223,6 +302,8 @@ export default function Home() {
       alert("Erreur : " + error.message);
     } else {
       alert("L'objet ou le lot a été publié avec succès !");
+      
+      // Nettoyage des champs de saisie
       setNewTitleFr("");
       setNewTitleEn("");
       setNewDescFr("");
@@ -234,6 +315,10 @@ export default function Home() {
       setImagePreviews([]);
       setIsLot(false);
       setLotContent([]);
+      
+      // EFFACER LE BROUILLON LOCAL APRES PUBLICATION REUSSIE
+      localStorage.removeItem("cedmilitaria_form_draft");
+      
       fetchItems();
     }
     setIsSubmitting(false);
@@ -471,11 +556,21 @@ export default function Home() {
               <div>
                 <div className="flex justify-between items-center border-b pb-3 mb-4">
                   <h3 className="text-lg font-serif text-stone-800">
-                    {lang === "fr" ? "Déposer une annonce" : "Publish a Collectible"}
+                    {lang === "fr" ? "Déposer une annonce (Brouillon auto-sauvegardé)" : "Publish a Collectible (Autosaved Draft)"}
                   </h3>
-                  <button onClick={handleLogout} className="text-xs text-red-600 hover:underline">
-                    {lang === "fr" ? "Verrouiller à nouveau" : "Lock Admin"}
-                  </button>
+                  <div className="flex gap-2">
+                    {/* Bouton pour réinitialiser le brouillon */}
+                    <button
+                      type="button"
+                      onClick={handleResetForm}
+                      className="text-xs text-stone-500 hover:text-stone-800 border border-stone-300 px-2 py-1 transition"
+                    >
+                      {lang === "fr" ? "Effacer le brouillon" : "Reset Draft"}
+                    </button>
+                    <button onClick={handleLogout} className="text-xs text-red-600 hover:underline">
+                      {lang === "fr" ? "Verrouiller à nouveau" : "Lock Admin"}
+                    </button>
+                  </div>
                 </div>
 
                 <form onSubmit={handleAddItem} className="space-y-4">
@@ -800,7 +895,6 @@ export default function Home() {
       <nav className="bg-white border-b border-stone-200 py-6 px-4">
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-6 items-end justify-between">
           
-          {/* BARRE DE RECHERCHE TEXTUELLE DU CATALOGUE */}
           <div className="w-full md:flex-1">
             <label className="text-xs font-bold text-stone-400 uppercase block mb-1 tracking-wider">
               {lang === "fr" ? "Rechercher un objet d'époque" : "Search the catalog"}
