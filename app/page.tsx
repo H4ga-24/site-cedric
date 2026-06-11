@@ -44,7 +44,8 @@ export default function Home() {
   const [selectedItem, setSelectedItem] = useState<MilitariaItem | null>(null);
   const [activeImageIdx, setActiveImageIdx] = useState(0);
 
-  // États de filtrage
+  // États de filtrage & Recherche textuelle
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedEra, setSelectedEra] = useState<string>("ALL");
   const [selectedNationality, setSelectedNationality] = useState<string>("ALL");
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
@@ -111,7 +112,6 @@ export default function Home() {
         previewUrl: URL.createObjectURL(file),
       }));
 
-      // Limiter à 20 images maximum
       setImagePreviews((prev) => [...prev, ...newPreviews].slice(0, 20));
     }
   };
@@ -317,11 +317,19 @@ export default function Home() {
     { code: "OTHER", fr: "Divers Militaria", en: "Other Militaria" },
   ];
 
+  // FILTRAGE ET RECHERCHE TEXTUELLE INTELLIGENTE
   const filteredItems = items.filter((item) => {
     const matchEra = selectedEra === "ALL" || item.era === selectedEra;
     const matchNat = selectedNationality === "ALL" || item.nationality === selectedNationality;
     const matchCat = selectedCategory === "ALL" || item.category === selectedCategory;
-    return matchEra && matchNat && matchCat;
+
+    // Comparaison textuelle insensible à la casse sur les titres, descriptions et marquages
+    const textFr = (item.title_fr + " " + item.description_fr + " " + (item.markings || "")).toLowerCase();
+    const textEn = (item.title_en + " " + item.description_en + " " + (item.markings || "")).toLowerCase();
+    const query = searchQuery.toLowerCase();
+    const matchText = textFr.includes(query) || textEn.includes(query);
+
+    return matchEra && matchNat && matchCat && matchText;
   });
 
   return (
@@ -383,54 +391,30 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Double espace services */}
+      {/* BANDEAU RECONSTITUÉ : ACHAT DE COLLECTION UNIQUE */}
       <section className="bg-stone-50 border-b border-stone-200 py-12 px-4">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
-          
-          <div className="bg-white p-8 border border-stone-200 rounded-sm flex flex-col justify-between shadow-2xs hover:border-stone-400 transition-all duration-300">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white p-8 border border-stone-200 rounded-sm flex flex-col justify-between shadow-2xs hover:border-stone-400 transition-all duration-300 text-center">
             <div>
               <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest block mb-1">
                 {lang === "fr" ? "Sourcing & Estimation" : "Appraisal & Sourcing"}
               </span>
               <h3 className="text-xl font-serif text-stone-950 mb-3">
-                {lang === "fr" ? "Vous vendez une collection ou un objet ?" : "Selling an item or a full collection?"}
+                {lang === "fr" ? "Vous vendez une collection ou un objet d'époque ?" : "Selling an item or an entire vintage collection?"}
               </h3>
-              <p className="text-xs text-stone-600 leading-relaxed mb-6">
+              <p className="text-xs text-stone-600 leading-relaxed mb-6 max-w-2xl mx-auto">
                 {lang === "fr"
-                  ? "Nous estimons gratuitement vos objets militaires sur photos et rachetons au comptant des pièces uniques ou des collections complètes. Discrétion, rapidité et sérieux garantis."
-                  : "We offer free appraisals on photos and purchase single rare items or entire groupings. Discretion, prompt payment, and expert service guaranteed."}
+                  ? "Nous estimons gratuitement vos objets militaires d'époque sur photos et rachetons au comptant des pièces uniques ou des collections complètes. Discrétion et sérieux garantis."
+                  : "We offer free vintage military appraisal on photos and buy single rare items or entire groupings. Discretion and expert service guaranteed."}
               </p>
             </div>
             <a
               href={`mailto:votre-email@example.com?subject=Proposition de vente - Collection Militaria`}
-              className="bg-stone-900 text-white hover:bg-stone-800 text-center py-2.5 px-6 tracking-wider uppercase text-xs font-semibold rounded-xs transition"
+              className="bg-stone-900 text-white hover:bg-stone-800 self-center py-2.5 px-12 tracking-wider uppercase text-xs font-semibold rounded-xs transition"
             >
               {lang === "fr" ? "Nous proposer une collection" : "Offer us a collection"}
             </a>
           </div>
-
-          <div className="bg-white p-8 border border-stone-200 rounded-sm flex flex-col justify-between shadow-2xs hover:border-stone-400 transition-all duration-300">
-            <div>
-              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block mb-1">
-                {lang === "fr" ? "Service de Recherche" : "Custom Search Service"}
-              </span>
-              <h3 className="text-xl font-serif text-stone-950 mb-3">
-                {lang === "fr" ? "Service de Recherche Personnalisée" : "Custom Sourcing Service"}
-              </h3>
-              <p className="text-xs text-stone-600 leading-relaxed mb-6">
-                {lang === "fr"
-                  ? "Un casque d'un régiment précis ? Un insigne rare ? Confiez-nous votre liste de recherche. Grâce à notre vaste réseau international de marchands et de collectionneurs, nous trouvons votre pièce."
-                  : "Searching for a specific helmet, badge, or named uniform? Entrust us with your wantlist. Through our international network of collectors and dealers, we source the exact missing piece."}
-              </p>
-            </div>
-            <a
-              href={`mailto:votre-email@example.com?subject=Demande de recherche personnalisee`}
-              className="bg-stone-900 text-white hover:bg-stone-800 text-center py-2.5 px-6 tracking-wider uppercase text-xs font-semibold rounded-xs transition"
-            >
-              {lang === "fr" ? "Lancer une recherche" : "Submit a request"}
-            </a>
-          </div>
-
         </div>
       </section>
 
@@ -716,7 +700,7 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* Prévisualisations interactives style Facebook (LE SEUL FORMULAIRE DE SELECTION DE PHOTOS) */}
+                  {/* Prévisualisations interactives */}
                   <div className="border border-stone-200 p-4 rounded-sm bg-stone-50 space-y-4">
                     <label className="block text-xs font-bold uppercase text-stone-700">
                       {lang === "fr" ? "Sélection & Organisation des Photos (Max 20)" : "Photo Selection & Rearranging (Max 20)"}
@@ -813,37 +797,52 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Barre de filtres */}
+      {/* Barre de recherche textuelle ET Filtres */}
       <nav className="bg-white border-b border-stone-200 py-6 px-4">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-6 items-center justify-between">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-6 items-end justify-between">
+          
+          {/* BARRE DE RECHERCHE TEXTUELLE DU CATALOGUE */}
+          <div className="w-full md:flex-1">
+            <label className="text-xs font-bold text-stone-400 uppercase block mb-1 tracking-wider">
+              {lang === "fr" ? "Rechercher un objet d'époque" : "Search the catalog"}
+            </label>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={lang === "fr" ? "Tapez un nom, un fabricant, un mot-clé (Ex: M1, Casque, McCord...)" : "Enter a name, marking, keyword (Ex: M1, Helmet, McCord...)"}
+              className="border border-stone-200 p-2.5 text-xs bg-stone-50 text-stone-700 rounded-sm w-full focus:outline-none focus:border-stone-400"
+            />
+          </div>
+
           <div className="w-full md:w-auto">
-            <span className="text-xs font-bold text-stone-400 uppercase block mb-1 tracking-wider">{lang === "fr" ? "Filtrer par époque" : "Filter by Era"}</span>
+            <span className="text-xs font-bold text-stone-400 uppercase block mb-1 tracking-wider">{lang === "fr" ? "Époque" : "Era"}</span>
             <select
               value={selectedEra}
               onChange={(e) => setSelectedEra(e.target.value)}
-              className="border border-stone-200 p-2.5 text-xs bg-stone-50 text-stone-700 rounded-sm w-full md:w-48 cursor-pointer focus:outline-none focus:border-stone-400"
+              className="border border-stone-200 p-2.5 text-xs bg-stone-50 text-stone-700 rounded-sm w-full md:w-40 cursor-pointer focus:outline-none focus:border-stone-400"
             >
               {eras.map(e => <option key={e.code} value={e.code}>{lang === "fr" ? e.fr : e.en}</option>)}
             </select>
           </div>
 
           <div className="w-full md:w-auto">
-            <span className="text-xs font-bold text-stone-400 uppercase block mb-1 tracking-wider">{lang === "fr" ? "Filtrer par nationalité" : "Filter by Nationality"}</span>
+            <span className="text-xs font-bold text-stone-400 uppercase block mb-1 tracking-wider">{lang === "fr" ? "Nationalité" : "Nationality"}</span>
             <select
               value={selectedNationality}
               onChange={(e) => setSelectedNationality(e.target.value)}
-              className="border border-stone-200 p-2.5 text-xs bg-stone-50 text-stone-700 rounded-sm w-full md:w-48 cursor-pointer focus:outline-none focus:border-stone-400"
+              className="border border-stone-200 p-2.5 text-xs bg-stone-50 text-stone-700 rounded-sm w-full md:w-40 cursor-pointer focus:outline-none focus:border-stone-400"
             >
               {nationalities.map(n => <option key={n.code} value={n.code}>{lang === "fr" ? n.fr : n.en}</option>)}
             </select>
           </div>
 
           <div className="w-full md:w-auto">
-            <span className="text-xs font-bold text-stone-400 uppercase block mb-1 tracking-wider">{lang === "fr" ? "Filtrer par équipement" : "Filter by Equipment"}</span>
+            <span className="text-xs font-bold text-stone-400 uppercase block mb-1 tracking-wider">{lang === "fr" ? "Équipement" : "Equipment"}</span>
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className="border border-stone-200 p-2.5 text-xs bg-stone-50 text-stone-700 rounded-sm w-full md:w-48 cursor-pointer focus:outline-none focus:border-stone-400"
+              className="border border-stone-200 p-2.5 text-xs bg-stone-50 text-stone-700 rounded-sm w-full md:w-40 cursor-pointer focus:outline-none focus:border-stone-400"
             >
               {categories.map(c => <option key={c.code} value={c.code}>{lang === "fr" ? c.fr : c.en}</option>)}
             </select>
