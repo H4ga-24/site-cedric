@@ -69,7 +69,7 @@ export default function Home() {
   const [newCondition, setNewCondition] = useState("");
   const [newCertNumber, setNewCertNumber] = useState("");
 
-  // Gestion des images interactives (Limite passée à 20)
+  // Gestion des images interactives (Limite : 20)
   const [imagePreviews, setImagePreviews] = useState<ImagePreview[]>([]);
 
   // Gestion du lot dynamique
@@ -101,7 +101,7 @@ export default function Home() {
     };
   }, [imagePreviews]);
 
-  // Gérer la sélection des images (Limite augmentée à 20)
+  // Gérer la sélection des images (Limite 20)
   const handleImageSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const filesArray = Array.from(e.target.files);
@@ -380,6 +380,57 @@ export default function Home() {
               : "CedMilitaria US specializes in the trade of genuine vintage military antiques. Browse our catalog to acquire guaranteed original items. We are also active buyers: if you wish to offer us a historical object or an entire collection for purchase, please get in touch."}
           </p>
           <div className="h-px bg-stone-300 w-16 mx-auto mt-8"></div>
+        </div>
+      </section>
+
+      {/* Double espace services */}
+      <section className="bg-stone-50 border-b border-stone-200 py-12 px-4">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8">
+          
+          <div className="bg-white p-8 border border-stone-200 rounded-sm flex flex-col justify-between shadow-2xs hover:border-stone-400 transition-all duration-300">
+            <div>
+              <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest block mb-1">
+                {lang === "fr" ? "Sourcing & Estimation" : "Appraisal & Sourcing"}
+              </span>
+              <h3 className="text-xl font-serif text-stone-950 mb-3">
+                {lang === "fr" ? "Vous vendez une collection ou un objet ?" : "Selling an item or a full collection?"}
+              </h3>
+              <p className="text-xs text-stone-600 leading-relaxed mb-6">
+                {lang === "fr"
+                  ? "Nous estimons gratuitement vos objets militaires sur photos et rachetons au comptant des pièces uniques ou des collections complètes. Discrétion, rapidité et sérieux garantis."
+                  : "We offer free appraisals on photos and purchase single rare items or entire groupings. Discretion, prompt payment, and expert service guaranteed."}
+              </p>
+            </div>
+            <a
+              href={`mailto:votre-email@example.com?subject=Proposition de vente - Collection Militaria`}
+              className="bg-stone-900 text-white hover:bg-stone-800 text-center py-2.5 px-6 tracking-wider uppercase text-xs font-semibold rounded-xs transition"
+            >
+              {lang === "fr" ? "Nous proposer une collection" : "Offer us a collection"}
+            </a>
+          </div>
+
+          <div className="bg-white p-8 border border-stone-200 rounded-sm flex flex-col justify-between shadow-2xs hover:border-stone-400 transition-all duration-300">
+            <div>
+              <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest block mb-1">
+                {lang === "fr" ? "Service de Recherche" : "Custom Search Service"}
+              </span>
+              <h3 className="text-xl font-serif text-stone-950 mb-3">
+                {lang === "fr" ? "Service de Recherche Personnalisée" : "Custom Sourcing Service"}
+              </h3>
+              <p className="text-xs text-stone-600 leading-relaxed mb-6">
+                {lang === "fr"
+                  ? "Un casque d'un régiment précis ? Un insigne rare ? Confiez-nous votre liste de recherche. Grâce à notre vaste réseau international de marchands et de collectionneurs, nous trouvons votre pièce."
+                  : "Searching for a specific helmet, badge, or named uniform? Entrust us with your wantlist. Through our international network of collectors and dealers, we source the exact missing piece."}
+              </p>
+            </div>
+            <a
+              href={`mailto:votre-email@example.com?subject=Demande de recherche personnalisee`}
+              className="bg-stone-900 text-white hover:bg-stone-800 text-center py-2.5 px-6 tracking-wider uppercase text-xs font-semibold rounded-xs transition"
+            >
+              {lang === "fr" ? "Lancer une recherche" : "Submit a request"}
+            </a>
+          </div>
+
         </div>
       </section>
 
@@ -665,7 +716,7 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* Prévisualisations interactives (Limite passée à 20) */}
+                  {/* Prévisualisations interactives style Facebook (LE SEUL FORMULAIRE DE SELECTION DE PHOTOS) */}
                   <div className="border border-stone-200 p-4 rounded-sm bg-stone-50 space-y-4">
                     <label className="block text-xs font-bold uppercase text-stone-700">
                       {lang === "fr" ? "Sélection & Organisation des Photos (Max 20)" : "Photo Selection & Rearranging (Max 20)"}
@@ -676,7 +727,7 @@ export default function Home() {
                       accept="image/*"
                       multiple
                       onChange={handleImageSelection}
-                      className="text-xs text-stone-500 file:mr-4 file:py-1.5 file:px-3 file:border-0 file:text-xs file:font-semibold file:bg-stone-800 file:text-white hover:file:bg-stone-700 cursor-pointer"
+                      className="text-xs text-stone-500 file:mr-4 file:py-1.5 file:px-3 file:border-0 file:text-xs file:font-semibold file:bg-stone-800 file:text-white hover:file:bg-stone-700 cursor-pointer w-full"
                     />
 
                     {imagePreviews.length > 0 && (
@@ -749,6 +800,18 @@ export default function Home() {
           </div>
         </section>
       )}
+
+      {/* Bandeau de Garantie d'Authenticité */}
+      <section className="bg-stone-950 text-white py-4 px-4 text-center border-y border-stone-800">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-center items-center gap-2 md:gap-6 text-[11px] tracking-widest uppercase font-serif">
+          <span className="text-amber-500 font-bold">★ CedMilitaria US Guarantee ★</span>
+          <span className="text-stone-300">
+            {lang === "fr" 
+              ? "Toutes nos pièces sont vendues avec une garantie d'authenticité historique d'époque à vie." 
+              : "All collectibles are sold with a lifetime guarantee of historical period authenticity."}
+          </span>
+        </div>
+      </section>
 
       {/* Barre de filtres */}
       <nav className="bg-white border-b border-stone-200 py-6 px-4">
