@@ -31,7 +31,6 @@ interface MilitariaItem {
   lot_content: SubItem[];
 }
 
-// Structure pour gérer les images en cours d'ajout
 interface ImagePreview {
   id: string;
   file: File;
@@ -70,7 +69,7 @@ export default function Home() {
   const [newCondition, setNewCondition] = useState("");
   const [newCertNumber, setNewCertNumber] = useState("");
 
-  // Gestion des images interactives
+  // Gestion des images interactives (Limite passée à 20)
   const [imagePreviews, setImagePreviews] = useState<ImagePreview[]>([]);
 
   // Gestion du lot dynamique
@@ -96,40 +95,37 @@ export default function Home() {
     fetchItems();
   }, []);
 
-  // Nettoyer les URLs de prévisualisation temporaires pour éviter les fuites de mémoire
   useEffect(() => {
     return () => {
       imagePreviews.forEach((img) => URL.revokeObjectURL(img.previewUrl));
     };
   }, [imagePreviews]);
 
-  // Gérer la sélection des images (style Facebook)
+  // Gérer la sélection des images (Limite augmentée à 20)
   const handleImageSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const filesArray = Array.from(e.target.files);
       const newPreviews = filesArray.map((file) => ({
         id: Math.random().toString(36).substring(2, 9),
         file,
-        previewUrl: URL.createObjectURL(file), // Génère une URL temporaire lisible par le navigateur
+        previewUrl: URL.createObjectURL(file),
       }));
 
-      // Limiter à 10 images maximum
-      setImagePreviews((prev) => [...prev, ...newPreviews].slice(0, 10));
+      // Limiter à 20 images maximum
+      setImagePreviews((prev) => [...prev, ...newPreviews].slice(0, 20));
     }
   };
 
-  // Supprimer une image de la sélection
   const handleRemoveSelectedImage = (id: string) => {
     setImagePreviews((prev) => {
       const target = prev.find((img) => img.id === id);
       if (target) {
-        URL.revokeObjectURL(target.previewUrl); // Libère la mémoire
+        URL.revokeObjectURL(target.previewUrl);
       }
       return prev.filter((img) => img.id !== id);
     });
   };
 
-  // Réorganiser les images (boutons Gauche / Droite)
   const handleMoveImage = (index: number, direction: "left" | "right") => {
     const targetIdx = direction === "left" ? index - 1 : index + 1;
     if (targetIdx < 0 || targetIdx >= imagePreviews.length) return;
@@ -141,7 +137,6 @@ export default function Home() {
     setImagePreviews(updated);
   };
 
-  // Réorganiser par Glisser-Déposer (Drag & Drop natif HTML5)
   const handleDragStart = (e: React.DragEvent, index: number) => {
     e.dataTransfer.setData("text/plain", index.toString());
   };
@@ -152,17 +147,16 @@ export default function Home() {
 
     const updated = [...imagePreviews];
     const draggedItem = updated[dragIndex];
-    updated.splice(dragIndex, 1); // Retire l'élément déplacé
-    updated.splice(targetIndex, 0, draggedItem); // L'insère à la nouvelle place
+    updated.splice(dragIndex, 1);
+    updated.splice(targetIndex, 0, draggedItem);
     setImagePreviews(updated);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault(); // Nécessaire pour autoriser le dépôt (drop)
+    e.preventDefault();
   };
 
-  // Envoyer la liste d'images ordonnée vers Supabase
-  const uploadOrderedImages = async (): Promise<string[]> => {
+  const uploadOrderedImages = async () => {
     const urls: string[] = [];
     for (let i = 0; i < imagePreviews.length; i++) {
       const { file } = imagePreviews[i];
@@ -175,7 +169,7 @@ export default function Home() {
         .upload(filePath, file);
 
       if (uploadError) {
-        console.error("Erreur d'envoi de fichier :", uploadError.message);
+        console.error("Erreur d'envoi :", uploadError.message);
         continue;
       }
 
@@ -200,7 +194,6 @@ export default function Home() {
     setIsSubmitting(true);
     let imageUrls: string[] = [];
 
-    // Télécharge les images dans l'ordre exact réorganisé par l'utilisateur
     if (imagePreviews.length > 0) {
       imageUrls = await uploadOrderedImages();
     }
@@ -226,7 +219,7 @@ export default function Home() {
     const { error } = await supabase.from("items").insert([newItem]);
 
     if (error) {
-      alert("Erreur de publication : " + error.message);
+      alert("Erreur : " + error.message);
     } else {
       alert("L'objet ou le lot a été publié avec succès !");
       setNewTitleFr("");
@@ -237,7 +230,7 @@ export default function Home() {
       setNewMarkings("");
       setNewCondition("");
       setNewCertNumber("");
-      setImagePreviews([]); // Vide les prévisualisations
+      setImagePreviews([]);
       setIsLot(false);
       setLotContent([]);
       fetchItems();
@@ -245,18 +238,15 @@ export default function Home() {
     setIsSubmitting(false);
   };
 
-  // Ajouter un sous-objet vide au lot
   const addSubItemField = () => {
     setLotContent([...lotContent, { nameFr: "", nameEn: "", conditionFr: "", conditionEn: "", markings: "" }]);
   };
 
-  // Supprimer un sous-objet du lot
   const removeSubItemField = (index: number) => {
     const updated = lotContent.filter((_, idx) => idx !== index);
     setLotContent(updated);
   };
 
-  // Mettre à jour un champ spécifique d'un sous-objet
   const updateSubItemField = (index: number, field: keyof SubItem, value: string) => {
     const updated = [...lotContent];
     updated[index][field] = value;
@@ -284,7 +274,7 @@ export default function Home() {
       .eq("id", id);
 
     if (error) {
-      alert("Erreur de mise à jour : " + error.message);
+      alert("Erreur : " + error.message);
     } else {
       fetchItems();
     }
@@ -387,7 +377,7 @@ export default function Home() {
           <p className="text-stone-600 text-sm leading-relaxed max-w-2xl mx-auto font-sans">
             {lang === "fr" 
               ? "CedMilitaria US est spécialisé dans le négoce d'antiquités militaires d'époque. Parcourez notre catalogue pour acquérir des objets garantis d'origine. Nous sommes également acheteurs : si vous souhaitez nous proposer à la vente un objet historique ou une collection complète, contactez-nous."
-              : "CedMilitaria US specializes in the trade of genuine vintage military antiquities. Browse our catalog to acquire guaranteed original items. We are also active buyers: if you wish to offer us a historical object or an entire collection for purchase, please get in touch."}
+              : "CedMilitaria US specializes in the trade of genuine vintage military antiques. Browse our catalog to acquire guaranteed original items. We are also active buyers: if you wish to offer us a historical object or an entire collection for purchase, please get in touch."}
           </p>
           <div className="h-px bg-stone-300 w-16 mx-auto mt-8"></div>
         </div>
@@ -675,10 +665,10 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* ESPACE DE PREVISUALISATION INTERACTIF STYLE FACEBOOK */}
+                  {/* Prévisualisations interactives (Limite passée à 20) */}
                   <div className="border border-stone-200 p-4 rounded-sm bg-stone-50 space-y-4">
                     <label className="block text-xs font-bold uppercase text-stone-700">
-                      {lang === "fr" ? "Sélection & Organisation des Photos (Max 10)" : "Photo Selection & Rearranging (Max 10)"}
+                      {lang === "fr" ? "Sélection & Organisation des Photos (Max 20)" : "Photo Selection & Rearranging (Max 20)"}
                     </label>
                     
                     <input
@@ -703,14 +693,12 @@ export default function Home() {
                             <div className="aspect-square w-full relative bg-stone-100 overflow-hidden">
                               <img src={img.previewUrl} alt="Preview" className="w-full h-full object-cover" />
                               
-                              {/* Indicateur image principale (couverture) */}
                               {idx === 0 && (
                                 <span className="absolute top-1 left-1 bg-amber-600 text-white text-[8px] font-bold px-1.5 py-0.5 uppercase tracking-wide rounded-xs">
                                   {lang === "fr" ? "Couverture" : "Cover"}
                                 </span>
                               )}
 
-                              {/* Bouton supprimer individuelle */}
                               <button
                                 type="button"
                                 onClick={() => handleRemoveSelectedImage(img.id)}
@@ -721,7 +709,6 @@ export default function Home() {
                               </button>
                             </div>
 
-                            {/* Commandes fléchées pour réorganiser facilement */}
                             <div className="flex justify-between items-center mt-2 px-1">
                               <button
                                 type="button"
@@ -871,7 +858,6 @@ export default function Home() {
                         className="object-cover w-full h-full transition duration-500 group-hover:scale-102"
                       />
                       
-                      {/* Badge Statut */}
                       {isSold && (
                         <div className="absolute inset-0 bg-stone-900/40 flex items-center justify-center">
                           <span className="bg-red-600 text-white font-serif text-sm tracking-widest uppercase px-4 py-1.5 border border-white">
@@ -941,7 +927,7 @@ export default function Home() {
                   className="object-contain w-full h-full"
                 />
               </div>
-              <div className="flex gap-2 mt-4 overflow-x-auto py-1">
+              <div className="flex gap-2 mt-4 overflow-x-auto py-1 animate-fadeIn">
                 {selectedItem.images.map((img, idx) => (
                   <button
                     key={idx}
