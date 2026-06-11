@@ -112,6 +112,7 @@ export default function Home() {
         previewUrl: URL.createObjectURL(file),
       }));
 
+      // Limiter à 20 images maximum
       setImagePreviews((prev) => [...prev, ...newPreviews].slice(0, 20));
     }
   };
@@ -317,13 +318,11 @@ export default function Home() {
     { code: "OTHER", fr: "Divers Militaria", en: "Other Militaria" },
   ];
 
-  // FILTRAGE ET RECHERCHE TEXTUELLE INTELLIGENTE
   const filteredItems = items.filter((item) => {
     const matchEra = selectedEra === "ALL" || item.era === selectedEra;
     const matchNat = selectedNationality === "ALL" || item.nationality === selectedNationality;
     const matchCat = selectedCategory === "ALL" || item.category === selectedCategory;
 
-    // Comparaison textuelle insensible à la casse sur les titres, descriptions et marquages
     const textFr = (item.title_fr + " " + item.description_fr + " " + (item.markings || "")).toLowerCase();
     const textEn = (item.title_en + " " + item.description_en + " " + (item.markings || "")).toLowerCase();
     const query = searchQuery.toLowerCase();
@@ -409,7 +408,7 @@ export default function Home() {
               </p>
             </div>
             <a
-              href={`mailto:votre-email@example.com?subject=Proposition de vente - Collection Militaria`}
+              href={`mailto:cedric-timer@orange.fr?subject=Proposition de vente - Collection Militaria`}
               className="bg-stone-900 text-white hover:bg-stone-800 self-center py-2.5 px-12 tracking-wider uppercase text-xs font-semibold rounded-xs transition"
             >
               {lang === "fr" ? "Nous proposer une collection" : "Offer us a collection"}
@@ -1101,7 +1100,7 @@ export default function Home() {
                 <span className="text-2xl font-mono font-bold text-stone-950">{selectedItem.price} €</span>
                 {selectedItem.status === "available" ? (
                   <a
-                    href={`mailto:votre-email@example.com?subject=Interet pour l'objet : ${selectedItem.title_fr}`}
+                    href={`mailto:cedric-timer@orange.fr?subject=Interet pour l'objet : ${selectedItem.title_fr}`}
                     className="bg-stone-900 text-white hover:bg-stone-800 py-2.5 px-6 tracking-wider uppercase text-xs font-semibold rounded-xs transition"
                   >
                     {lang === "fr" ? "Nous contacter" : "Contact us"}
