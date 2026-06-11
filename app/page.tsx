@@ -68,7 +68,11 @@ export default function Home() {
   const [buyerNewMessage, setBuyerNewMessage] = useState("");
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [showGeneralChatModal, setShowGeneralChatModal] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // REFERENCES DE DEFILEMENT SECURISEES ET SEPAREES
+  const adminChatEndRef = useRef<HTMLDivElement>(null);
+  const buyerChatEndRef = useRef<HTMLDivElement>(null);
+  const generalChatEndRef = useRef<HTMLDivElement>(null);
 
   // États de filtrage & Recherche textuelle
   const [searchQuery, setSearchQuery] = useState("");
@@ -148,9 +152,24 @@ export default function Home() {
     fetchAllMessages();
   }, []);
 
+  // DEFILEMENT INTELLIGENT ET PROFILE (N'interfere plus avec votre navigation)
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, selectedConvoId, selectedItem, showGeneralChatModal]);
+    if (isUnlocked && adminTab === "messages" && selectedConvoId) {
+      adminChatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages.length, selectedConvoId, adminTab, isUnlocked]);
+
+  useEffect(() => {
+    if (selectedItem) {
+      buyerChatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages.length, selectedItem]);
+
+  useEffect(() => {
+    if (showGeneralChatModal) {
+      generalChatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages.length, showGeneralChatModal]);
 
   // Charger le brouillon de saisie s'il existe
   useEffect(() => {
@@ -1132,7 +1151,7 @@ export default function Home() {
                                     </div>
                                   );
                                 })}
-                                <div ref={chatEndRef} />
+                                <div ref={adminChatEndRef} />
                               </div>
 
                               <form onSubmit={handleSendAdminReply} className="p-3 bg-white border-t border-stone-200 flex gap-2">
@@ -1481,7 +1500,7 @@ export default function Home() {
               {/* ACTION & FIL DE DISCUSSION CHAT CLIENT DIRECT */}
               <div className="border-t border-stone-200 pt-4 mt-auto">
                 <div className="flex justify-between items-center mb-4">
-                  <span className="text-xl font-mono font-bold text-stone-950">{selectedItem.price} €</span>
+                  <span className="text-2xl font-mono font-bold text-stone-950">{selectedItem.price} €</span>
                   {selectedItem.status !== "available" && (
                     <span className="text-stone-400 text-xs italic tracking-wider uppercase font-semibold">
                       {selectedItem.status === "sold" ? (lang === "fr" ? "Vendu" : "Sold") : (lang === "fr" ? "Réservé" : "Reserved")}
@@ -1509,7 +1528,7 @@ export default function Home() {
                             </div>
                           );
                         })}
-                        <div ref={chatEndRef} />
+                        <div ref={buyerChatEndRef} />
                       </div>
                     )}
 
@@ -1580,7 +1599,7 @@ export default function Home() {
                       </div>
                     );
                   })}
-                  <div ref={chatEndRef} />
+                  <div ref={generalChatEndRef} />
                 </div>
               )}
 
@@ -1635,7 +1654,7 @@ export default function Home() {
               </div>
               <div>
                 <h4 className="font-bold text-stone-800 uppercase mb-1">3. Nature de l'activité et transactions</h4>
-                <p>CedMilitaria US est un site d'exposition d'antiquités militaires. Les transactions ne s'effectuent pas de manière automatisée sur ce site. Tout achat ou offre d'acquisition fait l'objet d'une mise en relation directe par le chat du site, et la vente est finalisée par des méthodes de paiement externes convenues d'un commun accord (PayPal, virement bancaire).</p>
+                <p>CedMilitaria US est un site d'exposition d'antiquités militaires. Les transactions ne s'effectuent pas de manière automatisée sur ce site. Tout achat ou offre d'acquisition fait l'objet d'une mise en relation directe sur le chat du site, et la vente est finalisée par des méthodes de paiement externes convenues d'un commun accord (PayPal, virement bancaire).</p>
               </div>
               <div>
                 <h4 className="font-bold text-stone-800 uppercase mb-1">4. Réglementation sur les armes de collection</h4>
