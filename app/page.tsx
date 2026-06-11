@@ -31,6 +31,13 @@ interface MilitariaItem {
   lot_content: SubItem[];
 }
 
+// Structure pour gérer les images en cours d'ajout
+interface ImagePreview {
+  id: string;
+  file: File;
+  previewUrl: string;
+}
+
 export default function Home() {
   const [lang, setLang] = useState<"fr" | "en">("fr");
   const [items, setItems] = useState<MilitariaItem[]>([]);
@@ -62,7 +69,9 @@ export default function Home() {
   const [newMarkings, setNewMarkings] = useState("");
   const [newCondition, setNewCondition] = useState("");
   const [newCertNumber, setNewCertNumber] = useState("");
-  const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
+
+  // Gestion des images interactives
+  const [imagePreviews, setImagePreviews] = useState<ImagePreview[]>([]);
 
   // Gestion du lot dynamique
   const [isLot, setIsLot] = useState(false);
@@ -87,10 +96,76 @@ export default function Home() {
     fetchItems();
   }, []);
 
-  const uploadImages = async (files: FileList): Promise<string[]> => {
+  // Nettoyer les URLs de prévisualisation temporaires pour éviter les fuites de mémoire
+  useEffect(() => {
+    return () => {
+      imagePreviews.forEach((img) => URL.revokeObjectURL(img.previewUrl));
+    };
+  }, [imagePreviews]);
+
+  // Gérer la sélection des images (style Facebook)
+  const handleImageSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const filesArray = Array.from(e.target.files);
+      const newPreviews = filesArray.map((file) => ({
+        id: Math.random().toString(36).substring(2, 9),
+        file,
+        previewUrl: URL.createObjectURL(file), // Génère une URL temporaire lisible par le navigateur
+      }));
+
+      // Limiter à 10 images maximum
+      setImagePreviews((prev) => [...prev, ...newPreviews].slice(0, 10));
+    }
+  };
+
+  // Supprimer une image de la sélection
+  const handleRemoveSelectedImage = (id: string) => {
+    setImagePreviews((prev) => {
+      const target = prev.find((img) => img.id === id);
+      if (target) {
+        URL.revokeObjectURL(target.previewUrl); // Libère la mémoire
+      }
+      return prev.filter((img) => img.id !== id);
+    });
+  };
+
+  // Réorganiser les images (boutons Gauche / Droite)
+  const handleMoveImage = (index: number, direction: "left" | "right") => {
+    const targetIdx = direction === "left" ? index - 1 : index + 1;
+    if (targetIdx < 0 || targetIdx >= imagePreviews.length) return;
+
+    const updated = [...imagePreviews];
+    const temp = updated[index];
+    updated[index] = updated[targetIdx];
+    updated[targetIdx] = temp;
+    setImagePreviews(updated);
+  };
+
+  // Réorganiser par Glisser-Déposer (Drag & Drop natif HTML5)
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.setData("text/plain", index.toString());
+  };
+
+  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+    const dragIndex = parseInt(e.dataTransfer.getData("text/plain"), 10);
+    if (dragIndex === targetIndex) return;
+
+    const updated = [...imagePreviews];
+    const draggedItem = updated[dragIndex];
+    updated.splice(dragIndex, 1); // Retire l'élément déplacé
+    updated.splice(targetIndex, 0, draggedItem); // L'insère à la nouvelle place
+    setImagePreviews(updated);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault(); // Nécessaire pour autoriser le dépôt (drop)
+  };
+
+  // Envoyer la liste d'images ordonnée vers Supabase
+  const uploadOrderedImages = async (): Promise<string[]> => {
     const urls: string[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    for (let i = 0; i < imagePreviews.length; i++) {
+      const { file } = imagePreviews[i];
       const fileExt = file.name.split(".").pop();
       const fileName = `${Date.now()}_${i}.${fileExt}`;
       const filePath = `public/${fileName}`;
@@ -100,7 +175,7 @@ export default function Home() {
         .upload(filePath, file);
 
       if (uploadError) {
-        console.error("Erreur d'envoi :", uploadError.message);
+        console.error("Erreur d'envoi de fichier :", uploadError.message);
         continue;
       }
 
@@ -125,8 +200,9 @@ export default function Home() {
     setIsSubmitting(true);
     let imageUrls: string[] = [];
 
-    if (selectedFiles && selectedFiles.length > 0) {
-      imageUrls = await uploadImages(selectedFiles);
+    // Télécharge les images dans l'ordre exact réorganisé par l'utilisateur
+    if (imagePreviews.length > 0) {
+      imageUrls = await uploadOrderedImages();
     }
 
     const newItem = {
@@ -161,7 +237,7 @@ export default function Home() {
       setNewMarkings("");
       setNewCondition("");
       setNewCertNumber("");
-      setSelectedFiles(null);
+      setImagePreviews([]); // Vide les prévisualisations
       setIsLot(false);
       setLotContent([]);
       fetchItems();
@@ -311,7 +387,7 @@ export default function Home() {
           <p className="text-stone-600 text-sm leading-relaxed max-w-2xl mx-auto font-sans">
             {lang === "fr" 
               ? "CedMilitaria US est spécialisé dans le négoce d'antiquités militaires d'époque. Parcourez notre catalogue pour acquérir des objets garantis d'origine. Nous sommes également acheteurs : si vous souhaitez nous proposer à la vente un objet historique ou une collection complète, contactez-nous."
-              : "CedMilitaria US specializes in the trade of genuine vintage military antiques. Browse our catalog to acquire guaranteed original items. We are also active buyers: if you wish to offer us a historical object or an entire collection for purchase, please get in touch."}
+              : "CedMilitaria US specializes in the trade of genuine vintage military antiquities. Browse our catalog to acquire guaranteed original items. We are also active buyers: if you wish to offer us a historical object or an entire collection for purchase, please get in touch."}
           </p>
           <div className="h-px bg-stone-300 w-16 mx-auto mt-8"></div>
         </div>
@@ -380,7 +456,6 @@ export default function Home() {
 
                 <form onSubmit={handleAddItem} className="space-y-4">
                   
-                  {/* Option : Est-ce un lot ? */}
                   <div className="bg-stone-50 p-3 border border-stone-200 rounded-sm flex items-center gap-3">
                     <input
                       type="checkbox"
@@ -491,7 +566,6 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* FORMULAIRE CLASSIQUE (Si ce n'est pas un lot) */}
                   {!isLot ? (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
@@ -526,7 +600,6 @@ export default function Home() {
                       </div>
                     </div>
                   ) : (
-                    // FORMULAIRE DYNAMIQUE DE LOT (Si coché)
                     <div className="border border-stone-200 bg-stone-50 p-4 rounded-sm space-y-4">
                       <div className="flex justify-between items-center border-b pb-2">
                         <span className="text-xs font-bold text-stone-700 uppercase">Composition détaillée du lot</span>
@@ -602,16 +675,78 @@ export default function Home() {
                     </div>
                   )}
 
-                  <div>
-                    {/* Limite augmentée à 10 images */}
-                    <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Photos du lot ou de l'objet (Jusqu'à 10 photos, Haute définition)</label>
+                  {/* ESPACE DE PREVISUALISATION INTERACTIF STYLE FACEBOOK */}
+                  <div className="border border-stone-200 p-4 rounded-sm bg-stone-50 space-y-4">
+                    <label className="block text-xs font-bold uppercase text-stone-700">
+                      {lang === "fr" ? "Sélection & Organisation des Photos (Max 10)" : "Photo Selection & Rearranging (Max 10)"}
+                    </label>
+                    
                     <input
                       type="file"
                       accept="image/*"
                       multiple
-                      onChange={(e) => setSelectedFiles(e.target.files)}
-                      className="w-full text-xs text-stone-500 file:mr-4 file:py-2 file:px-4 file:border-0 file:text-xs file:font-semibold file:bg-stone-800 file:text-white hover:file:bg-stone-700"
+                      onChange={handleImageSelection}
+                      className="text-xs text-stone-500 file:mr-4 file:py-1.5 file:px-3 file:border-0 file:text-xs file:font-semibold file:bg-stone-800 file:text-white hover:file:bg-stone-700 cursor-pointer"
                     />
+
+                    {imagePreviews.length > 0 && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-2">
+                        {imagePreviews.map((img, idx) => (
+                          <div
+                            key={img.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, idx)}
+                            onDrop={(e) => handleDrop(e, idx)}
+                            onDragOver={handleDragOver}
+                            className={`border bg-white rounded-xs p-1 flex flex-col relative group cursor-move shadow-xs hover:border-stone-400 transition-all ${idx === 0 ? "border-amber-600 ring-1 ring-amber-600" : "border-stone-200"}`}
+                          >
+                            <div className="aspect-square w-full relative bg-stone-100 overflow-hidden">
+                              <img src={img.previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                              
+                              {/* Indicateur image principale (couverture) */}
+                              {idx === 0 && (
+                                <span className="absolute top-1 left-1 bg-amber-600 text-white text-[8px] font-bold px-1.5 py-0.5 uppercase tracking-wide rounded-xs">
+                                  {lang === "fr" ? "Couverture" : "Cover"}
+                                </span>
+                              )}
+
+                              {/* Bouton supprimer individuelle */}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveSelectedImage(img.id)}
+                                className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center transition-all opacity-90"
+                                title="Supprimer"
+                              >
+                                ✕
+                              </button>
+                            </div>
+
+                            {/* Commandes fléchées pour réorganiser facilement */}
+                            <div className="flex justify-between items-center mt-2 px-1">
+                              <button
+                                type="button"
+                                onClick={() => handleMoveImage(idx, "left")}
+                                disabled={idx === 0}
+                                className="text-xs font-bold text-stone-500 hover:text-stone-900 disabled:opacity-30 disabled:hover:text-stone-500"
+                                title="Déplacer à gauche"
+                              >
+                                ◀
+                              </button>
+                              <span className="text-[10px] text-stone-400 font-mono">Pos. {idx + 1}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleMoveImage(idx, "right")}
+                                disabled={idx === imagePreviews.length - 1}
+                                className="text-xs font-bold text-stone-500 hover:text-stone-900 disabled:opacity-30 disabled:hover:text-stone-500"
+                                title="Déplacer à droite"
+                              >
+                                ▶
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <button
@@ -753,7 +888,6 @@ export default function Home() {
                         </div>
                       )}
 
-                      {/* Badge de Lot sur la miniature */}
                       {item.is_lot && (
                         <span className="absolute top-2 left-2 bg-amber-600 text-white text-[9px] font-bold tracking-widest uppercase px-2 py-0.5 rounded-xs z-10">
                           {lang === "fr" ? "LOT" : "LOT"}
@@ -859,7 +993,6 @@ export default function Home() {
                   {lang === "fr" ? selectedItem.description_fr : selectedItem.description_en}
                 </p>
 
-                {/* Si c'est un LOT : Affichage de la table de composition détaillée */}
                 {selectedItem.is_lot && selectedItem.lot_content && selectedItem.lot_content.length > 0 ? (
                   <div className="mb-6">
                     <h4 className="text-[10px] font-bold uppercase text-stone-400 tracking-wider mb-2">{lang === "fr" ? "Composition détaillée du lot" : "Lot Content details"}</h4>
@@ -885,7 +1018,6 @@ export default function Home() {
                     </div>
                   </div>
                 ) : (
-                  // Si c'est un article CLASSIQUE : Affichage de la boîte technique classique
                   <div className="bg-stone-50 p-4 border border-stone-200 rounded-sm space-y-2 text-xs text-stone-700">
                     <div className="flex justify-between border-b border-stone-200 pb-1.5">
                       <span className="font-bold uppercase text-stone-400 text-[9px] tracking-wider">{lang === "fr" ? "Époque" : "Era"}</span>
