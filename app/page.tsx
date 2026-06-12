@@ -83,7 +83,6 @@ export default function Home() {
   const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
 
   // Sécurité Administrateur (Mot de passe simple)
-  const [isAdminMode, setIsAdminMode] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -176,7 +175,7 @@ export default function Home() {
     }
   }, [messages.length, showGeneralChatModal]);
 
-  // Charger le brouillon local s'il existe
+  // Charger le brouillon de saisie s'il existe
   useEffect(() => {
     const savedDraft = localStorage.getItem("cedmilitaria_form_draft");
     if (savedDraft) {
@@ -201,7 +200,7 @@ export default function Home() {
     }
   }, []);
 
-  // Sauvegarder le brouillon local
+  // Sauvegarder le brouillon de saisie en temps réel
   useEffect(() => {
     if (!isUnlocked || editingItemId) return;
     const draftData = {
@@ -539,6 +538,7 @@ export default function Home() {
 
   const handleLogout = () => {
     setIsUnlocked(false);
+    setEditingItemId(null);
   };
 
   const handleUpdateStatus = async (id: string, status: MilitariaItem["status"]) => {
@@ -554,7 +554,6 @@ export default function Home() {
     }
   };
 
-  // CORRECTION CLÉ : AJOUT DU STRING DE LA COLONNE DANS .eq("id", id)
   const handleDeleteItem = async (id: string) => {
     if (confirm("Supprimer définitivement cet objet ?")) {
       const { error } = await supabase.from("items").delete().eq("id", id);
@@ -762,11 +761,12 @@ export default function Home() {
         </div>
       </section>
 
-      {/* MODULE ADMINISTRATION COMPLET */}
-      {isAdminMode && isUnlocked && (
+      {/* MODULE ADMINISTRATION LOURD UNIQUEMENT PILOTÉ PAR LA CONNEXION (RÉSOUD TOUS LES BUGS D'AFFICHAGE) */}
+      {isUnlocked && (
         <section className="bg-stone-100 border-b border-stone-200 p-6 animate-fadeIn">
           <div className="max-w-4xl mx-auto bg-white rounded-md shadow-xs border border-stone-200 overflow-hidden">
             
+            {/* Onglets d'administration */}
             <div className="bg-stone-900 text-white p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
               <div className="flex gap-2">
                 <button
@@ -1514,6 +1514,7 @@ export default function Home() {
                       {lang === "fr" ? "Discuter en direct avec Cédric" : "Chat Live with Cedric"}
                     </h4>
 
+                    {/* Zone d'affichage des messages du fil */}
                     {activeChatConvoId && (
                       <div className="space-y-2 max-h-[120px] overflow-y-auto p-2 bg-white border border-stone-150 rounded-xs text-[11px] leading-relaxed">
                         {messages.filter(m => m.conversation_id === activeChatConvoId).map((msg, idx) => {
@@ -1705,7 +1706,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* POP-UP MODAL DE CONNEXION ADMIN */}
+      {/* POP-UP MODAL DE CONNEXION ADMIN (Pop-up de haut d'écran) */}
       {showLoginModal && (
         <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
           <div className="bg-white max-w-md w-full p-6 rounded-sm border border-stone-200 shadow-2xl relative">
