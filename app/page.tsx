@@ -45,7 +45,7 @@ interface ChatMessage {
 
 interface ImagePreview {
   id: string;
-  file: File;
+  file: File | null; // null si l'image provient d'une URL déjà stockée en base lors d'une modification
   previewUrl: string;
 }
 
@@ -58,9 +58,11 @@ export default function Home() {
   const [activeImageIdx, setActiveImageIdx] = useState(0);
 
   // Onglet Admin actif
-  const [adminTab, setAdminTab] = useState<"publish" | "drafts" | "messages">("publish");
+  const [adminTab, setAdminTab] = useState<"publish" | "drafts">("publish");
   const [selectedConvoId, setSelectedConvoId] = useState<string | null>(null);
   const [adminReplyText, setAdminReplyText] = useState("");
+  const [showInboxModal, setShowInboxModal] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
   // Messagerie Acheteur
   const [activeChatConvoId, setActiveChatConvoId] = useState<string | null>(null);
@@ -69,7 +71,7 @@ export default function Home() {
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [showGeneralChatModal, setShowGeneralChatModal] = useState(false);
 
-  // REFERENCES DE DEFILEMENT SECURISEES ET SEPAREES
+  // Références de défilement du chat
   const adminChatEndRef = useRef<HTMLDivElement>(null);
   const buyerChatEndRef = useRef<HTMLDivElement>(null);
   const generalChatEndRef = useRef<HTMLDivElement>(null);
@@ -86,6 +88,9 @@ export default function Home() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showLegal, setShowLegal] = useState(false);
+
+  // ID de l'annonce en cours de modification (null si création)
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
   // Formulaire d'ajout
   const [newTitleFr, setNewTitleFr] = useState("");
@@ -152,12 +157,12 @@ export default function Home() {
     fetchAllMessages();
   }, []);
 
-  // DEFILEMENT INTELLIGENT ET PROFILE (N'interfere plus avec votre navigation)
+  // Défilements automatiques de sécurité pour les fenêtres de chat actives
   useEffect(() => {
-    if (isUnlocked && adminTab === "messages" && selectedConvoId) {
+    if (isUnlocked && showInboxModal && selectedConvoId) {
       adminChatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages.length, selectedConvoId, adminTab, isUnlocked]);
+  }, [messages.length, selectedConvoId, showInboxModal, isUnlocked]);
 
   useEffect(() => {
     if (selectedItem) {
@@ -171,7 +176,7 @@ export default function Home() {
     }
   }, [messages.length, showGeneralChatModal]);
 
-  // Charger le brouillon de saisie s'il existe
+  // Charger le brouillon local s'il existe
   useEffect(() => {
     const savedDraft = localStorage.getItem("cedmilitaria_form_draft");
     if (savedDraft) {
@@ -196,9 +201,9 @@ export default function Home() {
     }
   }, []);
 
-  // Sauvegarder le brouillon de saisie en temps réel
+  // Sauvegarder le brouillon local
   useEffect(() => {
-    if (!isUnlocked) return;
+    if (!isUnlocked || editingItemId) return; // Ne pas sauvegarder en local si on est en train de modifier une annonce existante
     const draftData = {
       newTitleFr,
       newTitleEn,
@@ -230,13 +235,8 @@ export default function Home() {
     isLot,
     lotContent,
     isUnlocked,
+    editingItemId
   ]);
-
-  useEffect(() => {
-    return () => {
-      imagePreviews.forEach((img) => URL.revokeObjectURL(img.previewUrl));
-    };
-  }, [imagePreviews]);
 
   // Sélection d'images (Max 20)
   const handleImageSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -254,7 +254,7 @@ export default function Home() {
   const handleRemoveSelectedImage = (id: string) => {
     setImagePreviews((prev) => {
       const target = prev.find((img) => img.id === id);
-      if (target) URL.revokeObjectURL(target.previewUrl);
+      if (target && target.file) URL.revokeObjectURL(target.previewUrl);
       return prev.filter((img) => img.id !== id);
     });
   };
@@ -289,35 +289,72 @@ export default function Home() {
     e.preventDefault();
   };
 
-  const uploadOrderedImages = async () => {
+  // Traiter l'envoi d'images ordonnées (conserve les URLs déjà existantes sans les réuploader)
+  const uploadOrderedImages = async (): Promise<string[]> => {
     const urls: string[] = [];
     for (let i = 0; i < imagePreviews.length; i++) {
-      const { file } = imagePreviews[i];
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${Date.now()}_${i}.${fileExt}`;
-      const filePath = `public/${fileName}`;
+      const img = imagePreviews[i];
+      if (img.file === null) {
+        // Déjà sur Supabase Storage, on garde l'URL existante
+        urls.push(img.previewUrl);
+      } else {
+        // Nouveau fichier importé, on l'envoie sur le Storage
+        const { file } = img;
+        const fileExt = file.name.split(".").pop();
+        const fileName = `${Date.now()}_${i}.${fileExt}`;
+        const filePath = `public/${fileName}`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("militaria-images")
-        .upload(filePath, file);
+        const { error: uploadError } = await supabase.storage
+          .from("militaria-images")
+          .upload(filePath, file);
 
-      if (uploadError) {
-        console.error("Erreur d'envoi :", uploadError.message);
-        continue;
-      }
+        if (uploadError) {
+          console.error("Erreur d'envoi :", uploadError.message);
+          continue;
+        }
 
-      const { data } = supabase.storage
-        .from("militaria-images")
-        .getPublicUrl(filePath);
+        const { data } = supabase.storage
+          .from("militaria-images")
+          .getPublicUrl(filePath);
 
-      if (data?.publicUrl) {
-        urls.push(data.publicUrl);
+        if (data?.publicUrl) {
+          urls.push(data.publicUrl);
+        }
       }
     }
     return urls;
   };
 
-  // Soumission de l'article (En vente 'available' ou en Brouillon 'draft')
+  // Charger un article existant ou un brouillon pour l'ÉDITER
+  const handleEditItem = (item: MilitariaItem) => {
+    setEditingItemId(item.id);
+    setNewTitleFr(item.title_fr);
+    setNewTitleEn(item.title_en);
+    setNewDescFr(item.description_fr || "");
+    setNewDescEn(item.description_en || "");
+    setNewPrice(item.price.toString());
+    setNewEra(item.era);
+    setNewNationality(item.nationality);
+    setNewCategory(item.category);
+    setNewMarkings(item.markings || "");
+    setNewCondition(item.condition || "");
+    setNewCertNumber(item.certificate_number || "");
+    setIsLot(item.is_lot);
+    setLotContent(item.lot_content || []);
+    
+    // Injecter les images existantes dans l'espace de prévisualisation
+    const existingPreviews = item.images.map((url, idx) => ({
+      id: `existing_${idx}_${Date.now()}`,
+      file: null, // Indique que c'est une image déjà stockée
+      previewUrl: url,
+    }));
+    setImagePreviews(existingPreviews);
+
+    // Ouvrir l'onglet d'édition
+    setAdminTab("publish");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const handleAddItem = async (e: React.FormEvent, forceStatus: MilitariaItem["status"] = "available") => {
     e.preventDefault();
     if (!newTitleFr || !newTitleEn || !newPrice) {
@@ -332,7 +369,7 @@ export default function Home() {
       imageUrls = await uploadOrderedImages();
     }
 
-    const newItem = {
+    const payload = {
       title_fr: newTitleFr,
       title_en: newTitleEn,
       description_fr: newDescFr,
@@ -350,12 +387,25 @@ export default function Home() {
       lot_content: isLot ? lotContent : []
     };
 
-    const { error } = await supabase.from("items").insert([newItem]);
+    let resultError = null;
 
-    if (error) {
-      alert("Erreur de publication : " + error.message);
+    if (editingItemId) {
+      // MODE MODIFICATION : On effectue un UPDATE
+      const { error } = await supabase
+        .from("items")
+        .update(payload)
+        .eq("id", editingItemId);
+      resultError = error;
     } else {
-      alert(forceStatus === "draft" ? "Annonce enregistrée dans vos brouillons Supabase !" : "L'objet a été publié avec succès !");
+      // MODE NOUVELLE FICHE : On effectue un INSERT
+      const { error } = await supabase.from("items").insert([payload]);
+      resultError = error;
+    }
+
+    if (resultError) {
+      alert("Erreur de publication : " + resultError.message);
+    } else {
+      alert(editingItemId ? "La fiche a bien été modifiée et enregistrée !" : (forceStatus === "draft" ? "Annonce enregistrée dans vos brouillons Supabase !" : "L'objet a été publié avec succès !"));
       setNewTitleFr("");
       setNewTitleEn("");
       setNewDescFr("");
@@ -367,13 +417,31 @@ export default function Home() {
       setImagePreviews([]);
       setIsLot(false);
       setLotContent([]);
+      setEditingItemId(null);
       localStorage.removeItem("cedmilitaria_form_draft");
       fetchItems();
     }
     setIsSubmitting(false);
   };
 
-  // ENVOYER UN MESSAGE DEPUIS LE CHAT PUBLIC (Acheteur)
+  // Annuler la modification en cours d'un objet
+  const handleCancelEdit = () => {
+    setNewTitleFr("");
+    setNewTitleEn("");
+    setNewDescFr("");
+    setNewDescEn("");
+    setNewPrice("");
+    setNewMarkings("");
+    setNewCondition("");
+    setNewCertNumber("");
+    setImagePreviews([]);
+    setIsLot(false);
+    setLotContent([]);
+    setEditingItemId(null);
+    localStorage.removeItem("cedmilitaria_form_draft");
+  };
+
+  // Envoyer un message (Acheteur)
   const handleSendBuyerMessage = async (e: React.FormEvent, isGeneral: boolean = false) => {
     e.preventDefault();
     if (!buyerNewMessage || (!activeChatConvoId && !buyerName)) {
@@ -408,7 +476,7 @@ export default function Home() {
     setIsSendingMessage(false);
   };
 
-  // RÉPONDRE À UN FIL (Admin connecté)
+  // Répondre à un fil (Admin)
   const handleSendAdminReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adminReplyText || !selectedConvoId) return;
@@ -473,6 +541,7 @@ export default function Home() {
     if (adminPassword === "cedric123") {
       setIsUnlocked(true);
       setAdminPassword("");
+      setShowLoginModal(false);
     } else {
       alert("Code d'accès incorrect");
     }
@@ -492,28 +561,6 @@ export default function Home() {
       alert("Erreur : " + error.message);
     } else {
       fetchItems();
-    }
-  };
-
-  const handleDeleteItem = async (id: string) => {
-    if (confirm("Supprimer définitivement cet objet ?")) {
-      const { error } = await supabase.from("items").delete().eq("id", id);
-      if (error) {
-        alert("Erreur : " + error.message);
-      } else {
-        fetchItems();
-      }
-    }
-  };
-
-  const handleDeleteMessage = async (id: string) => {
-    if (confirm("Supprimer ce message ?")) {
-      const { error } = await supabase.from("messages").delete().eq("id", id);
-      if (error) {
-        alert("Erreur : " + error.message);
-      } else {
-        fetchAllMessages();
-      }
     }
   };
 
@@ -569,12 +616,28 @@ export default function Home() {
   const convoList = Array.from(conversationsMap.entries());
 
   return (
-    <div className="min-h-screen flex flex-col bg-stone-50">
+    <div className="min-h-screen flex flex-col bg-stone-50 relative">
+
+      {/* BOUTON FLOTTANT MESSAGERIE EN HAUT À GAUCHE (Uniquement si connecté) */}
+      {isUnlocked && (
+        <button
+          onClick={() => setShowInboxModal(true)}
+          className="fixed top-6 left-6 z-40 bg-stone-900 text-white p-3.5 rounded-full shadow-lg hover:bg-stone-850 hover:scale-105 transition active:scale-95 flex items-center justify-center cursor-pointer border border-stone-800"
+          title="Ouvrir la Messagerie"
+        >
+          <span className="text-lg">💬</span>
+          {convoList.length > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-600 text-white font-bold text-[10px] w-5 h-5 rounded-full flex items-center justify-center animate-pulse">
+              {convoList.length}
+            </span>
+          )}
+        </button>
+      )}
       
       {/* En-tête */}
       <header className="border-b border-stone-200 bg-white">
         <div className="max-w-7xl mx-auto px-4 py-6 flex justify-between items-center">
-          <div>
+          <div className="pl-16"> {/* Laisse la place pour le bouton flottant de messagerie */}
             <h1 className="text-2xl font-serif tracking-wider text-stone-900 uppercase">
               CedMilitaria US
             </h1>
@@ -584,11 +647,18 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Ouvre la Modal de connexion en haut de l'écran */}
             <button
-              onClick={() => setIsAdminMode(!isAdminMode)}
+              onClick={() => {
+                if (isUnlocked) {
+                  handleLogout();
+                } else {
+                  setShowLoginModal(true);
+                }
+              }}
               className={`text-xs border px-3 py-1 transition ${isUnlocked ? "border-amber-600 text-amber-700 bg-amber-50" : "border-stone-300 text-stone-600 hover:bg-stone-50"}`}
             >
-              {isUnlocked ? (lang === "fr" ? "Admin Déverrouillé" : "Admin Unlocked") : (lang === "fr" ? "Connexion Admin" : "Admin Login")}
+              {isUnlocked ? (lang === "fr" ? "Se déconnecter de l'Admin" : "Lock Admin") : (lang === "fr" ? "Connexion Admin" : "Admin Login")}
             </button>
 
             <div className="flex gap-1 text-xs font-medium">
@@ -680,423 +750,339 @@ export default function Home() {
         </div>
       </section>
 
-      {/* MODULE ADMINISTRATION COMPLET AVEC ONGLETS */}
-      {isAdminMode && (
+      {/* MODULE ADMINISTRATION COMPLET AVEC ONGLETS (Sans la messagerie) */}
+      {isAdminMode && isUnlocked && (
         <section className="bg-stone-100 border-b border-stone-200 p-6 animate-fadeIn">
           <div className="max-w-4xl mx-auto bg-white rounded-md shadow-xs border border-stone-200 overflow-hidden">
             
-            {!isUnlocked ? (
-              <form onSubmit={handleUnlockAdmin} className="p-6 space-y-4">
-                <h3 className="text-sm font-bold uppercase text-stone-500 tracking-wider mb-2">
-                  {lang === "fr" ? "Déverrouiller l'Espace Administrateur" : "Unlock Admin Space"}
-                </h3>
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    placeholder={lang === "fr" ? "Code d'accès administrateur" : "Admin passcode"}
-                    value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    className="border border-stone-300 p-2 text-sm flex-1"
-                    required
-                  />
-                  <button type="submit" className="bg-stone-900 text-white px-6 py-2 text-sm hover:bg-stone-800 transition uppercase tracking-wider font-medium">
-                    {lang === "fr" ? "Valider" : "Submit"}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <div>
-                
-                {/* En-tête de l'admin avec onglets */}
-                <div className="bg-stone-900 text-white p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setAdminTab("publish")}
-                      className={`text-xs px-3 py-1.5 uppercase font-bold tracking-wider transition ${adminTab === "publish" ? "bg-stone-850 text-amber-500 border border-amber-600" : "text-stone-300 hover:text-white"}`}
-                    >
-                      {lang === "fr" ? "Créer un objet" : "Publish Item"}
-                    </button>
-                    <button
-                      onClick={() => setAdminTab("drafts")}
-                      className={`text-xs px-3 py-1.5 uppercase font-bold tracking-wider transition relative ${adminTab === "drafts" ? "bg-stone-850 text-amber-500 border border-amber-600" : "text-stone-300 hover:text-white"}`}
-                    >
-                      {lang === "fr" ? "Brouillons Préparés" : "Drafts"}
-                      {draftItems.length > 0 && (
-                        <span className="ml-1.5 bg-amber-500 text-stone-950 font-bold px-1.5 py-0.5 rounded-full text-[9px]">{draftItems.length}</span>
-                      )}
-                    </button>
-                    <button
-                      onClick={() => setAdminTab("messages")}
-                      className={`text-xs px-3 py-1.5 uppercase font-bold tracking-wider transition relative ${adminTab === "messages" ? "bg-stone-850 text-amber-500 border border-amber-600" : "text-stone-300 hover:text-white"}`}
-                    >
-                      {lang === "fr" ? "Messagerie Clients" : "Conversations"}
-                      {convoList.length > 0 && (
-                        <span className="ml-1.5 bg-red-500 text-white font-bold px-1.5 py-0.5 rounded-full text-[9px]">{convoList.length}</span>
-                      )}
-                    </button>
-                  </div>
-                  <button onClick={handleLogout} className="text-xs text-red-400 hover:underline">
-                    {lang === "fr" ? "Verrouiller l'Admin ✕" : "Lock Admin ✕"}
-                  </button>
-                </div>
+            {/* Onglets Admin simplifiés */}
+            <div className="bg-stone-900 text-white p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setAdminTab("publish")}
+                  className={`text-xs px-3 py-1.5 uppercase font-bold tracking-wider transition ${adminTab === "publish" ? "bg-stone-850 text-amber-500 border border-amber-600" : "text-stone-300 hover:text-white"}`}
+                >
+                  {editingItemId ? (lang === "fr" ? "✏ Modification en cours" : "✏ Editing Item") : (lang === "fr" ? "Créer un objet" : "Publish Item")}
+                </button>
+                <button
+                  onClick={() => setAdminTab("drafts")}
+                  className={`text-xs px-3 py-1.5 uppercase font-bold tracking-wider transition relative ${adminTab === "drafts" ? "bg-stone-850 text-amber-500 border border-amber-600" : "text-stone-300 hover:text-white"}`}
+                >
+                  {lang === "fr" ? "Brouillons Préparés" : "Drafts"}
+                  {draftItems.length > 0 && (
+                    <span className="ml-1.5 bg-amber-500 text-stone-950 font-bold px-1.5 py-0.5 rounded-full text-[9px]">{draftItems.length}</span>
+                  )}
+                </button>
+              </div>
+              <button onClick={handleLogout} className="text-xs text-red-400 hover:underline">
+                {lang === "fr" ? "Verrouiller l'Admin ✕" : "Lock Admin ✕"}
+              </button>
+            </div>
 
-                {/* ONGLET 1 : PUBLICATION / CRÉATION D'OBJET */}
-                {adminTab === "publish" && (
-                  <div className="p-6">
-                    <div className="flex justify-between items-center border-b pb-3 mb-4">
-                      <h3 className="text-base font-serif text-stone-800">
-                        {lang === "fr" ? "Créer une nouvelle fiche" : "Create New Collectible Card"}
-                      </h3>
+            {/* ONGLET 1 : PUBLICATION / CRÉATION D'OBJET */}
+            {adminTab === "publish" && (
+              <div className="p-6">
+                <div className="flex justify-between items-center border-b pb-3 mb-4">
+                  <h3 className="text-base font-serif text-stone-800">
+                    {editingItemId ? (lang === "fr" ? "Modifier la fiche de l'annonce" : "Modify Item Card") : (lang === "fr" ? "Créer une nouvelle fiche" : "Create New Collectible Card")}
+                  </h3>
+                  <div className="flex gap-2">
+                    {editingItemId && (
                       <button
                         type="button"
-                        onClick={handleResetForm}
-                        className="text-xs text-stone-500 border border-stone-200 px-3 py-1 hover:bg-stone-50 transition"
+                        onClick={handleCancelEdit}
+                        className="text-xs text-red-600 border border-red-200 px-3 py-1 hover:bg-red-50 transition font-bold"
                       >
-                        {lang === "fr" ? "Effacer le brouillon de saisie" : "Reset Form"}
+                        {lang === "fr" ? "Annuler la modification" : "Cancel Edit"}
                       </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleResetForm}
+                      className="text-xs text-stone-500 border border-stone-200 px-3 py-1 hover:bg-stone-50 transition"
+                    >
+                      {lang === "fr" ? "Effacer le brouillon de saisie" : "Reset Form"}
+                    </button>
+                  </div>
+                </div>
+
+                <form onSubmit={(e) => handleAddItem(e, "available")} className="space-y-4">
+                  
+                  <div className="bg-stone-50 p-3 border border-stone-200 rounded-sm flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      id="isLotCheck"
+                      checked={isLot}
+                      onChange={(e) => setIsLot(e.target.checked)}
+                      className="w-4 h-4 accent-stone-850"
+                    />
+                    <label htmlFor="isLotCheck" className="text-xs font-bold uppercase text-stone-700 cursor-pointer">
+                      {lang === "fr" ? "Cet article est un LOT groupé d'objets différents" : "This article is a grouped LOT of different items"}
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Titre (Français)</label>
+                      <input
+                        type="text"
+                        value={newTitleFr}
+                        onChange={(e) => setNewTitleFr(e.target.value)}
+                        className="w-full border border-stone-300 p-2 text-sm"
+                        placeholder="Ex: Lot de paquetage d'un GI américain..."
+                      />
                     </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Title (English)</label>
+                      <input
+                        type="text"
+                        value={newTitleEn}
+                        onChange={(e) => setNewTitleEn(e.target.value)}
+                        className="w-full border border-stone-300 p-2 text-sm"
+                        placeholder="Ex: US Soldier Gear Grouping..."
+                      />
+                    </div>
+                  </div>
 
-                    <form onSubmit={(e) => handleAddItem(e, "available")} className="space-y-4">
-                      
-                      <div className="bg-stone-50 p-3 border border-stone-200 rounded-sm flex items-center gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Description Générale (Français)</label>
+                      <textarea
+                        value={newDescFr}
+                        onChange={(e) => setNewDescFr(e.target.value)}
+                        className="w-full border border-stone-300 p-2 text-sm h-20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">General Description (English)</label>
+                      <textarea
+                        value={newDescEn}
+                        onChange={(e) => setNewDescEn(e.target.value)}
+                        className="w-full border border-stone-300 p-2 text-sm h-20"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Prix Global du Lot / de l'Objet (€)</label>
+                      <input
+                        type="number"
+                        value={newPrice}
+                        onChange={(e) => setNewPrice(e.target.value)}
+                        className="w-full border border-stone-300 p-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Époque</label>
+                      <select
+                        value={newEra}
+                        onChange={(e) => setNewEra(e.target.value as MilitariaItem["era"])}
+                        className="w-full border border-stone-300 p-2 text-sm"
+                      >
+                        <option value="WW1">World War I</option>
+                        <option value="WW2">World War II</option>
+                        <option value="VIETNAM">Vietnam War</option>
+                        <option value="POST_WAR">Post-War</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Nationalité dominante</label>
+                      <select
+                        value={newNationality}
+                        onChange={(e) => setNewNationality(e.target.value as MilitariaItem["nationality"])}
+                        className="w-full border border-stone-300 p-2 text-sm"
+                      >
+                        <option value="US">Américain</option>
+                        <option value="DE">Allemand</option>
+                        <option value="UK">Anglais</option>
+                        <option value="OTHER">Autre</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Équipement principal</label>
+                      <select
+                        value={newCategory}
+                        onChange={(e) => setNewCategory(e.target.value as MilitariaItem["category"])}
+                        className="w-full border border-stone-300 p-2 text-sm"
+                      >
+                        <option value="HELMET">Casque / Coiffure</option>
+                        <option value="UNIFORM">Uniforme</option>
+                        <option value="MEDAL">Médaille / Insigne</option>
+                        <option value="EQUIPMENT">Équipement</option>
+                        <option value="WEAPON">Arme neutralisée</option>
+                        <option value="OTHER">Divers</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {!isLot ? (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Marquages / Fabricant</label>
                         <input
-                          type="checkbox"
-                          id="isLotCheck"
-                          checked={isLot}
-                          onChange={(e) => setIsLot(e.target.checked)}
-                          className="w-4 h-4 accent-stone-850"
+                          type="text"
+                          value={newMarkings}
+                          onChange={(e) => setNewMarkings(e.target.value)}
+                          className="w-full border border-stone-300 p-2 text-sm"
+                          placeholder="Ex: Q66, McCord..."
                         />
-                        <label htmlFor="isLotCheck" className="text-xs font-bold uppercase text-stone-700 cursor-pointer">
-                          {lang === "fr" ? "Cet article est un LOT groupé d'objets différents" : "This article is a grouped LOT of different items"}
-                        </label>
                       </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Titre (Français)</label>
-                          <input
-                            type="text"
-                            value={newTitleFr}
-                            onChange={(e) => setNewTitleFr(e.target.value)}
-                            className="w-full border border-stone-300 p-2 text-sm"
-                            placeholder="Ex: Lot de paquetage d'un GI américain..."
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Title (English)</label>
-                          <input
-                            type="text"
-                            value={newTitleEn}
-                            onChange={(e) => setNewTitleEn(e.target.value)}
-                            className="w-full border border-stone-300 p-2 text-sm"
-                            placeholder="Ex: US Soldier Gear Grouping..."
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Description Générale (Français)</label>
-                          <textarea
-                            value={newDescFr}
-                            onChange={(e) => setNewDescFr(e.target.value)}
-                            className="w-full border border-stone-300 p-2 text-sm h-20"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold uppercase text-stone-500 mb-1">General Description (English)</label>
-                          <textarea
-                            value={newDescEn}
-                            onChange={(e) => setNewDescEn(e.target.value)}
-                            className="w-full border border-stone-300 p-2 text-sm h-20"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <div>
-                          <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Prix Global du Lot / de l'Objet (€)</label>
-                          <input
-                            type="number"
-                            value={newPrice}
-                            onChange={(e) => setNewPrice(e.target.value)}
-                            className="w-full border border-stone-300 p-2 text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Époque</label>
-                          <select
-                            value={newEra}
-                            onChange={(e) => setNewEra(e.target.value as MilitariaItem["era"])}
-                            className="w-full border border-stone-300 p-2 text-sm"
-                          >
-                            <option value="WW1">World War I</option>
-                            <option value="WW2">World War II</option>
-                            <option value="VIETNAM">Vietnam War</option>
-                            <option value="POST_WAR">Post-War</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Nationalité dominante</label>
-                          <select
-                            value={newNationality}
-                            onChange={(e) => setNewNationality(e.target.value as MilitariaItem["nationality"])}
-                            className="w-full border border-stone-300 p-2 text-sm"
-                          >
-                            <option value="US">Américain</option>
-                            <option value="DE">Allemand</option>
-                            <option value="UK">Anglais</option>
-                            <option value="OTHER">Autre</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Équipement principal</label>
-                          {/* SÉLECTEUR DE CATÉGORIE CORRIGÉ */}
-                          <select
-                            value={newCategory}
-                            onChange={(e) => setNewCategory(e.target.value as MilitariaItem["category"])}
-                            className="w-full border border-stone-300 p-2 text-sm"
-                          >
-                            <option value="HELMET">Casque / Coiffure</option>
-                            <option value="UNIFORM">Uniforme</option>
-                            <option value="MEDAL">Médaille / Insigne</option>
-                            <option value="EQUIPMENT">Équipement</option>
-                            <option value="WEAPON">Arme neutralisée</option>
-                            <option value="OTHER">Divers</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      {!isLot ? (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div>
-                            <label className="block text-xs font-bold uppercase text-stone-500 mb-1">Marquages / Fabricant</label>
-                            <input
-                              type="text"
-                              value={newMarkings}
-                              onChange={(e) => setNewMarkings(e.target.value)}
-                              className="w-full border border-stone-300 p-2 text-sm"
-                              placeholder="Ex: Q66, McCord..."
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-bold uppercase text-stone-500 mb-1">État de conservation</label>
-                            <input
-                              type="text"
-                              value={newCondition}
-                              onChange={(e) => setNewCondition(e.target.value)}
-                              className="w-full border border-stone-300 p-2 text-sm"
-                              placeholder="Ex: Excellent, Mint, Combat Wear..."
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-bold uppercase text-stone-500 mb-1">N° de Certificat (Armes neut.)</label>
-                            <input
-                              type="text"
-                              value={newCertNumber}
-                              onChange={(e) => setNewCertNumber(e.target.value)}
-                              className="w-full border border-stone-300 p-2 text-sm"
-                              placeholder="Ex: St-Etienne 4287..."
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="border border-stone-200 bg-stone-50 p-4 rounded-sm space-y-4">
-                          <div className="flex justify-between items-center border-b pb-2">
-                            <span className="text-xs font-bold text-stone-700 uppercase">Composition détaillée du lot</span>
-                            <button
-                              type="button"
-                              onClick={addSubItemField}
-                              className="text-xs bg-stone-800 text-white px-3 py-1 hover:bg-stone-700 transition"
-                            >
-                              + Ajouter un objet au lot
-                            </button>
-                          </div>
-
-                          {lotContent.length === 0 ? (
-                            <p className="text-xs text-stone-500 text-center py-4 italic">Aucun objet ajouté pour l'instant. Cliquez ci-dessus pour composer votre lot.</p>
-                          ) : (
-                            <div className="space-y-4">
-                              {lotContent.map((sub, idx) => (
-                                <div key={idx} className="bg-white p-3 border border-stone-200 rounded-sm relative space-y-3">
-                                  <button
-                                    type="button"
-                                    onClick={() => removeSubItemField(idx)}
-                                    className="absolute top-2 right-2 text-red-600 font-bold text-xs hover:underline"
-                                  >
-                                    Supprimer ✕
-                                  </button>
-                                  
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
-                                    <input
-                                      type="text"
-                                      placeholder="Nom de l'objet (FR)"
-                                      value={sub.nameFr}
-                                      onChange={(e) => updateSubItemField(idx, "nameFr", e.target.value)}
-                                      className="border p-2 text-xs w-full"
-                                      required
-                                    />
-                                    <input
-                                      type="text"
-                                      placeholder="Item Name (EN)"
-                                      value={sub.nameEn}
-                                      onChange={(e) => updateSubItemField(idx, "nameEn", e.target.value)}
-                                      className="border p-2 text-xs w-full"
-                                      required
-                                    />
-                                  </div>
-
-                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                    <input
-                                      type="text"
-                                      placeholder="État de conservation (FR)"
-                                      value={sub.conditionFr}
-                                      onChange={(e) => updateSubItemField(idx, "conditionFr", e.target.value)}
-                                      className="border p-2 text-xs w-full"
-                                    />
-                                    <input
-                                      type="text"
-                                      placeholder="Condition (EN)"
-                                      value={sub.conditionEn}
-                                      onChange={(e) => updateSubItemField(idx, "conditionEn", e.target.value)}
-                                      className="border p-2 text-xs w-full"
-                                    />
-                                    <input
-                                      type="text"
-                                      placeholder="Marquages / Fabricant"
-                                      value={sub.markings}
-                                      onChange={(e) => updateSubItemField(idx, "markings", e.target.value)}
-                                      className="border p-2 text-xs w-full"
-                                    />
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Prévisualisations interactives style Facebook (Max 20) */}
-                      <div className="border border-stone-200 p-4 rounded-sm bg-stone-50 space-y-4">
-                        <label className="block text-xs font-bold uppercase text-stone-700">
-                          {lang === "fr" ? "Sélection & Organisation des Photos (Max 20)" : "Photo Selection & Rearranging (Max 20)"}
-                        </label>
-                        
+                      <div>
+                        <label className="block text-xs font-bold uppercase text-stone-500 mb-1">État de conservation</label>
                         <input
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          onChange={handleImageSelection}
-                          className="text-xs text-stone-500 file:mr-4 file:py-1.5 file:px-3 file:border-0 file:text-xs file:font-semibold file:bg-stone-800 file:text-white hover:file:bg-stone-700 cursor-pointer w-full"
+                          type="text"
+                          value={newCondition}
+                          onChange={(e) => setNewCondition(e.target.value)}
+                          className="w-full border border-stone-300 p-2 text-sm"
+                          placeholder="Ex: Excellent, Mint, Combat Wear..."
                         />
-
-                        {imagePreviews.length > 0 && (
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-2">
-                            {imagePreviews.map((img, idx) => (
-                              <div
-                                key={img.id}
-                                draggable
-                                onDragStart={(e) => handleDragStart(e, idx)}
-                                onDrop={(e) => handleDrop(e, idx)}
-                                onDragOver={handleDragOver}
-                                className={`border bg-white rounded-xs p-1 flex flex-col relative group cursor-move shadow-xs hover:border-stone-400 transition-all ${idx === 0 ? "border-amber-600 ring-1 ring-amber-600" : "border-stone-200"}`}
-                              >
-                                <div className="aspect-square w-full relative bg-stone-100 overflow-hidden">
-                                  <img src={img.previewUrl} alt="Preview" className="w-full h-full object-cover" />
-                                  {idx === 0 && (
-                                    <span className="absolute top-1 left-1 bg-amber-600 text-white text-[8px] font-bold px-1.5 py-0.5 uppercase tracking-wide rounded-xs">
-                                      {lang === "fr" ? "Couverture" : "Cover"}
-                                    </span>
-                                  )}
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveSelectedImage(img.id)}
-                                    className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center transition-all opacity-90"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-
-                                <div className="flex justify-between items-center mt-2 px-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleMoveImage(idx, "left")}
-                                    disabled={idx === 0}
-                                    className="text-xs font-bold text-stone-500 hover:text-stone-900"
-                                  >
-                                    ◀
-                                  </button>
-                                  <span className="text-[10px] text-stone-400 font-mono">Pos. {idx + 1}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleMoveImage(idx, "right")}
-                                    disabled={idx === imagePreviews.length - 1}
-                                    className="text-xs font-bold text-stone-500 hover:text-stone-900"
-                                  >
-                                    ▶
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
                       </div>
-
-                      {/* ACTIONS : EN VENTE DIRECTE OU BROUILLON ILLIMITÉ SUPABASE */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <button
-                          type="submit"
-                          disabled={isSubmitting}
-                          className="bg-stone-900 text-white py-3 hover:bg-stone-850 transition text-xs tracking-wider uppercase font-bold disabled:bg-stone-400"
-                        >
-                          {isSubmitting ? "Publication..." : "Mettre en vente (Catalogue public)"}
-                        </button>
+                      <div>
+                        <label className="block text-xs font-bold uppercase text-stone-500 mb-1">N° de Certificat (Armes neut.)</label>
+                        <input
+                          type="text"
+                          value={newCertNumber}
+                          onChange={(e) => setNewCertNumber(e.target.value)}
+                          className="w-full border border-stone-300 p-2 text-sm"
+                          placeholder="Ex: St-Etienne 4287..."
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border border-stone-200 bg-stone-50 p-4 rounded-sm space-y-4">
+                      <div className="flex justify-between items-center border-b pb-2">
+                        <span className="text-xs font-bold text-stone-700 uppercase">Composition détaillée du lot</span>
                         <button
                           type="button"
-                          onClick={(e) => handleAddItem(e, "draft")}
-                          disabled={isSubmitting}
-                          className="bg-amber-600 hover:bg-amber-700 text-white py-3 transition text-xs tracking-wider uppercase font-bold disabled:bg-stone-400"
+                          onClick={addSubItemField}
+                          className="text-xs bg-stone-800 text-white px-3 py-1 hover:bg-stone-700 transition"
                         >
-                          {isSubmitting ? "Sauvegarde..." : "Enregistrer comme Brouillon (Préparer)"}
+                          + Ajouter un objet au lot
                         </button>
                       </div>
 
-                    </form>
-                  </div>
-                )}
+                      {lotContent.length === 0 ? (
+                        <p className="text-xs text-stone-500 text-center py-4 italic">Aucun objet ajouté pour l'instant. Cliquez ci-dessus pour composer votre lot.</p>
+                      ) : (
+                        <div className="space-y-4">
+                          {lotContent.map((sub, idx) => (
+                            <div key={idx} className="bg-white p-3 border border-stone-200 rounded-sm relative space-y-3">
+                              <button
+                                type="button"
+                                onClick={() => removeSubItemField(idx)}
+                                className="absolute top-2 right-2 text-red-600 font-bold text-xs hover:underline"
+                              >
+                                Supprimer ✕
+                              </button>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                                <input
+                                  type="text"
+                                  placeholder="Nom de l'objet (FR)"
+                                  value={sub.nameFr}
+                                  onChange={(e) => updateSubItemField(idx, "nameFr", e.target.value)}
+                                  className="border p-2 text-xs w-full"
+                                  required
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Item Name (EN)"
+                                  value={sub.nameEn}
+                                  onChange={(e) => updateSubItemField(idx, "nameEn", e.target.value)}
+                                  className="border p-2 text-xs w-full"
+                                  required
+                                />
+                              </div>
 
-                {/* ONGLET 2 : BROUILLONS SUPABASE PRÉPARÉS (Quantité illimitée) */}
-                {adminTab === "drafts" && (
-                  <div className="p-6">
-                    <h3 className="text-base font-serif text-stone-800 mb-4 border-b pb-2">
-                      {lang === "fr" ? `Mes annonces en brouillon (${draftItems.length})` : `My Prepared Drafts (${draftItems.length})`}
-                    </h3>
-                    
-                    {draftItems.length === 0 ? (
-                      <p className="text-xs text-stone-400 italic py-6 text-center">{lang === "fr" ? "Aucun brouillon préparé en ligne." : "No prepared drafts."}</p>
-                    ) : (
-                      <div className="space-y-4">
-                        {draftItems.map((draft) => (
-                          <div key={draft.id} className="border border-stone-200 p-4 bg-stone-50 rounded-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                            <div className="flex gap-4 items-center">
-                              <img src={draft.images[0]} alt="Draft cover" className="w-16 h-12 object-cover border" />
-                              <div>
-                                <h4 className="font-serif text-stone-950 font-bold text-sm">{lang === "fr" ? draft.title_fr : draft.title_en}</h4>
-                                <span className="text-[10px] text-stone-500 font-semibold uppercase">{draft.price} € — {draft.nationality} — {draft.era}</span>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <input
+                                  type="text"
+                                  placeholder="État de conservation (FR)"
+                                  value={sub.conditionFr}
+                                  onChange={(e) => updateSubItemField(idx, "conditionFr", e.target.value)}
+                                  className="border p-2 text-xs w-full"
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Condition (EN)"
+                                  value={sub.conditionEn}
+                                  onChange={(e) => updateSubItemField(idx, "conditionEn", e.target.value)}
+                                  className="border p-2 text-xs w-full"
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="Marquages / Fabricant"
+                                  value={sub.markings}
+                                  onChange={(e) => updateSubItemField(idx, "markings", e.target.value)}
+                                  className="border p-2 text-xs w-full"
+                                />
                               </div>
                             </div>
-                            <div className="flex gap-2 w-full md:w-auto">
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Prévisualisations interactives style Facebook (Max 20) */}
+                  <div className="border border-stone-200 p-4 rounded-sm bg-stone-50 space-y-4">
+                    <label className="block text-xs font-bold uppercase text-stone-700">
+                      {lang === "fr" ? "Sélection & Organisation des Photos (Max 20)" : "Photo Selection & Rearranging (Max 20)"}
+                    </label>
+                    
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleImageSelection}
+                      className="text-xs text-stone-500 file:mr-4 file:py-1.5 file:px-3 file:border-0 file:text-xs file:font-semibold file:bg-stone-800 file:text-white hover:file:bg-stone-700 cursor-pointer w-full"
+                    />
+
+                    {imagePreviews.length > 0 && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 mt-2">
+                        {imagePreviews.map((img, idx) => (
+                          <div
+                            key={img.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, idx)}
+                            onDrop={(e) => handleDrop(e, idx)}
+                            onDragOver={handleDragOver}
+                            className={`border bg-white rounded-xs p-1 flex flex-col relative group cursor-move shadow-xs hover:border-stone-400 transition-all ${idx === 0 ? "border-amber-600 ring-1 ring-amber-600" : "border-stone-200"}`}
+                          >
+                            <div className="aspect-square w-full relative bg-stone-100 overflow-hidden">
+                              <img src={img.previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                              {idx === 0 && (
+                                <span className="absolute top-1 left-1 bg-amber-600 text-white text-[8px] font-bold px-1.5 py-0.5 uppercase tracking-wide rounded-xs">
+                                  {lang === "fr" ? "Couverture" : "Cover"}
+                                </span>
+                              )}
                               <button
-                                onClick={() => handleUpdateStatus(draft.id, "available")}
-                                className="bg-stone-900 text-white text-xs px-4 py-2 hover:bg-stone-850 font-semibold flex-1 md:flex-none"
+                                type="button"
+                                onClick={() => handleRemoveSelectedImage(img.id)}
+                                className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white text-[10px] w-5 h-5 rounded-full flex items-center justify-center transition-all opacity-90"
                               >
-                                {lang === "fr" ? "Mettre en ligne" : "Publish Live"}
+                                ✕
                               </button>
+                            </div>
+
+                            <div className="flex justify-between items-center mt-2 px-1">
                               <button
-                                onClick={() => handleDeleteItem(draft.id)}
-                                className="bg-red-600 text-white text-xs px-3 py-2 hover:bg-red-700 font-semibold flex-1 md:flex-none"
+                                type="button"
+                                onClick={() => handleMoveImage(idx, "left")}
+                                disabled={idx === 0}
+                                className="text-xs font-bold text-stone-500 hover:text-stone-900"
                               >
-                                {lang === "fr" ? "Supprimer" : "Delete"}
+                                ◀
+                              </button>
+                              <span className="text-[10px] text-stone-400 font-mono">Pos. {idx + 1}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleMoveImage(idx, "right")}
+                                disabled={idx === imagePreviews.length - 1}
+                                className="text-xs font-bold text-stone-500 hover:text-stone-900"
+                              >
+                                ▶
                               </button>
                             </div>
                           </div>
@@ -1104,84 +1090,78 @@ export default function Home() {
                       </div>
                     )}
                   </div>
-                )}
 
-                {/* ONGLET 3 : CONSOLE DE MESSAGERIE CHAT DIRECT */}
-                {adminTab === "messages" && (
-                  <div className="p-6">
-                    <h3 className="text-base font-serif text-stone-800 mb-4 border-b pb-2">
-                      {lang === "fr" ? `Fils de discussion actifs (${convoList.length})` : `Active Conversations (${convoList.length})`}
-                    </h3>
-
-                    {convoList.length === 0 ? (
-                      <p className="text-xs text-stone-400 italic py-6 text-center">{lang === "fr" ? "Aucune discussion en cours." : "No active chats."}</p>
-                    ) : (
-                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        
-                        <div className="border border-stone-200 rounded-sm divide-y divide-stone-150 max-h-[450px] overflow-y-auto">
-                          {convoList.map(([convoId, msgs]) => {
-                            const lastMsg = msgs[msgs.length - 1];
-                            const buyerName = msgs.find(m => m.sender_role === "buyer")?.sender_name || "Acheteur";
-                            return (
-                              <button
-                                key={convoId}
-                                onClick={() => setSelectedConvoId(convoId)}
-                                className={`w-full text-left p-3 text-xs block transition ${selectedConvoId === convoId ? "bg-stone-100 border-l-2 border-stone-800" : "bg-white hover:bg-stone-50"}`}
-                              >
-                                <div className="font-bold text-stone-900 mb-0.5">{buyerName}</div>
-                                <div className="text-stone-500 truncate mb-1">{lastMsg?.message_text}</div>
-                                <div className="text-[10px] text-stone-400 uppercase tracking-wide">{lastMsg?.item_title || "Objet"}</div>
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        <div className="lg:col-span-2 border border-stone-200 rounded-sm bg-stone-50 flex flex-col h-[450px] justify-between">
-                          {selectedConvoId ? (
-                            <>
-                              <div className="p-4 overflow-y-auto flex-1 space-y-3 max-h-[360px]">
-                                {messages.filter(m => m.conversation_id === selectedConvoId).map((msg) => {
-                                  const isAdmin = msg.sender_role === "admin";
-                                  return (
-                                    <div key={msg.id} className={`flex flex-col ${isAdmin ? "items-end" : "items-start"}`}>
-                                      <span className="text-[9px] text-stone-400 mb-0.5 font-semibold px-1">{msg.sender_name}</span>
-                                      <div className={`p-3 rounded-md text-xs max-w-[80%] leading-relaxed ${isAdmin ? "bg-stone-900 text-white rounded-tr-none" : "bg-white text-stone-800 rounded-tl-none border border-stone-200"}`}>
-                                        {msg.message_text}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                                <div ref={adminChatEndRef} />
-                              </div>
-
-                              <form onSubmit={handleSendAdminReply} className="p-3 bg-white border-t border-stone-200 flex gap-2">
-                                <input
-                                  type="text"
-                                  value={adminReplyText}
-                                  onChange={(e) => setAdminReplyText(e.target.value)}
-                                  placeholder={lang === "fr" ? "Tapez votre réponse ici..." : "Type your reply..."}
-                                  className="border border-stone-300 p-2 text-xs flex-1 rounded-sm focus:outline-none focus:border-stone-500"
-                                  required
-                                />
-                                <button type="submit" className="bg-stone-900 hover:bg-stone-850 text-white text-xs px-4 py-2 uppercase font-bold tracking-wider">
-                                  {lang === "fr" ? "Répondre" : "Reply"}
-                                </button>
-                              </form>
-                            </>
-                          ) : (
-                            <div className="flex-1 flex items-center justify-center text-xs text-stone-400 italic">
-                              {lang === "fr" ? "Sélectionnez une discussion pour répondre" : "Select a conversation to reply"}
-                            </div>
-                          )}
-                        </div>
-
-                      </div>
-                    )}
+                  {/* ACTIONS : PUBLICATION DIRECTE OU BROUILLON */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="bg-stone-900 text-white py-3 hover:bg-stone-850 transition text-xs tracking-wider uppercase font-bold disabled:bg-stone-400"
+                    >
+                      {isSubmitting ? "Publication..." : (editingItemId ? "Valider la modification" : "Mettre en vente (Catalogue public)")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => handleAddItem(e, "draft")}
+                      disabled={isSubmitting}
+                      className="bg-amber-600 hover:bg-amber-700 text-white py-3 transition text-xs tracking-wider uppercase font-bold disabled:bg-stone-400"
+                    >
+                      {isSubmitting ? "Sauvegarde..." : (editingItemId ? "Ré-enregistrer en Brouillon" : "Enregistrer comme Brouillon")}
+                    </button>
                   </div>
-                )}
 
+                </form>
               </div>
             )}
+
+            {/* ONGLET 2 : BROUILLONS SUPABASE PRÉPARÉS ET ENFIN ÉDITABLES */}
+            {adminTab === "drafts" && (
+              <div className="p-6">
+                <h3 className="text-base font-serif text-stone-800 mb-4 border-b pb-2">
+                  {lang === "fr" ? `Mes annonces en brouillon (${draftItems.length})` : `My Prepared Drafts (${draftItems.length})`}
+                </h3>
+                
+                {draftItems.length === 0 ? (
+                  <p className="text-xs text-stone-400 italic py-6 text-center">{lang === "fr" ? "Aucun brouillon préparé en ligne." : "No prepared drafts."}</p>
+                ) : (
+                  <div className="space-y-4">
+                    {draftItems.map((draft) => (
+                      <div key={draft.id} className="border border-stone-200 p-4 bg-stone-50 rounded-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-fadeIn">
+                        <div className="flex gap-4 items-center">
+                          <img src={draft.images[0]} alt="Draft cover" className="w-16 h-12 object-cover border" />
+                          <div>
+                            <h4 className="font-serif text-stone-950 font-bold text-sm">{lang === "fr" ? draft.title_fr : draft.title_en}</h4>
+                            <span className="text-[10px] text-stone-500 font-semibold uppercase">{draft.price} € — {draft.nationality} — {draft.era}</span>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 w-full md:w-auto">
+                          {/* BOUTON MODIFIER / ÉDITER LE BROUILLON */}
+                          <button
+                            onClick={() => handleEditItem(draft)}
+                            className="bg-amber-600 text-white text-xs px-3.5 py-2 hover:bg-amber-700 font-semibold flex-1 md:flex-none transition"
+                          >
+                            {lang === "fr" ? "✏ Éditer" : "✏ Edit"}
+                          </button>
+                          <button
+                            onClick={() => handleUpdateStatus(draft.id, "available")}
+                            className="bg-stone-900 text-white text-xs px-4 py-2 hover:bg-stone-850 font-semibold flex-1 md:flex-none transition"
+                          >
+                            {lang === "fr" ? "Mettre en ligne" : "Publish Live"}
+                          </button>
+                          <button
+                            onClick={() => handleDeleteItem(draft.id)}
+                            className="bg-red-600 text-white text-xs px-3 py-2 hover:bg-red-700 font-semibold flex-1 md:flex-none transition"
+                          >
+                            {lang === "fr" ? "Supprimer" : "Delete"}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
         </section>
       )}
@@ -1303,12 +1283,22 @@ export default function Home() {
                           Vendu
                         </button>
                       </div>
-                      <button
-                        onClick={() => handleDeleteItem(item.id)}
-                        className="bg-red-700 text-white text-[9px] px-2 py-0.5 rounded hover:bg-red-800"
-                      >
-                        Supr.
-                      </button>
+                      
+                      <div className="flex gap-1">
+                        {/* BOUTON MODIFIER DIRECTEMENT SUR LA FICHE DU CATALOGUE EN LIGNE */}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleEditItem(item); }}
+                          className="bg-amber-600 hover:bg-amber-700 text-white text-[9px] px-2 py-0.5 rounded transition"
+                        >
+                          Modif.
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteItem(item.id); }}
+                          className="bg-red-700 text-white text-[9px] px-2 py-0.5 rounded hover:bg-red-800 transition"
+                        >
+                          Supr.
+                        </button>
+                      </div>
                     </div>
                   )}
 
@@ -1379,7 +1369,7 @@ export default function Home() {
       {/* Pop-up Fiche Détaillée & Messagerie Privée Client Intégrée */}
       {selectedItem && (
         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white max-w-5xl w-full max-h-[90vh] overflow-y-auto rounded-sm border border-stone-200 shadow-2xl flex flex-col md:flex-row">
+          <div className="bg-white max-w-4xl w-full max-h-[90vh] overflow-y-auto rounded-sm border border-stone-200 shadow-2xl flex flex-col md:flex-row">
             
             <div className="md:w-1/2 bg-stone-50 p-6 flex flex-col justify-between border-r border-stone-200">
               <div className="aspect-square w-full relative overflow-hidden bg-white border border-stone-200 rounded-sm">
@@ -1630,6 +1620,125 @@ export default function Home() {
                 </button>
               </form>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* POP-UP CONSOLE DE MESSAGERIE INTERACTIVE POUR L'ADMIN (Ouverture séparée haut gauche) */}
+      {showInboxModal && isUnlocked && (
+        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white max-w-5xl w-full h-[85vh] rounded-md border border-stone-200 shadow-2xl flex flex-col relative overflow-hidden">
+            <button
+              onClick={() => setShowInboxModal(false)}
+              className="absolute top-4 right-4 text-stone-400 hover:text-stone-700 text-lg z-10"
+            >
+              ✕
+            </button>
+            <div className="bg-stone-900 text-white p-4">
+              <h3 className="text-base font-serif uppercase tracking-wider">
+                {lang === "fr" ? "Console de Messagerie Directe Clients" : "Live Customer Inbox"}
+              </h3>
+            </div>
+
+            <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
+              {/* Liste des conversations de gauche */}
+              <div className="w-full md:w-1/3 border-r border-stone-200 divide-y divide-stone-150 overflow-y-auto bg-stone-50 max-h-[30vh] md:max-h-none">
+                {convoList.length === 0 ? (
+                  <p className="text-xs text-stone-400 italic p-6 text-center">{lang === "fr" ? "Aucune conversation." : "No chats yet."}</p>
+                ) : (
+                  convoList.map(([convoId, msgs]) => {
+                    const lastMsg = msgs[msgs.length - 1];
+                    const buyerName = msgs.find(m => m.sender_role === "buyer")?.sender_name || "Acheteur";
+                    return (
+                      <button
+                        key={convoId}
+                        onClick={() => setSelectedConvoId(convoId)}
+                        className={`w-full text-left p-4 text-xs block transition ${selectedConvoId === convoId ? "bg-white border-l-4 border-amber-600 font-semibold shadow-2xs" : "bg-stone-50 hover:bg-stone-100"}`}
+                      >
+                        <div className="font-bold text-stone-950 mb-0.5">{buyerName}</div>
+                        <div className="text-stone-500 truncate mb-1">{lastMsg?.message_text}</div>
+                        <div className="text-[10px] text-stone-400 uppercase tracking-widest font-bold">{lastMsg?.item_title || "Objet"}</div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Discussion et zone de réponse de droite */}
+              <div className="flex-1 flex flex-col justify-between bg-stone-100 h-[50vh] md:h-auto overflow-hidden">
+                {selectedConvoId ? (
+                  <>
+                    <div className="p-6 overflow-y-auto flex-1 space-y-4 max-h-[70%]">
+                      {messages.filter(m => m.conversation_id === selectedConvoId).map((msg) => {
+                        const isAdmin = msg.sender_role === "admin";
+                        return (
+                          <div key={msg.id} className={`flex flex-col ${isAdmin ? "items-end" : "items-start"} animate-fadeIn`}>
+                            <span className="text-[8px] text-stone-400 mb-0.5 font-bold px-1">{msg.sender_name}</span>
+                            <div className={`p-3 rounded-md text-xs max-w-[80%] leading-relaxed ${isAdmin ? "bg-stone-900 text-white rounded-tr-none" : "bg-white text-stone-800 rounded-tl-none border border-stone-150"}`}>
+                              {msg.message_text}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <div ref={adminChatEndRef} />
+                    </div>
+
+                    <form onSubmit={handleSendAdminReply} className="p-4 bg-white border-t border-stone-200 flex gap-2">
+                      <input
+                        type="text"
+                        value={adminReplyText}
+                        onChange={(e) => setAdminReplyText(e.target.value)}
+                        placeholder={lang === "fr" ? "Écrivez votre réponse ici..." : "Type your reply..."}
+                        className="border border-stone-300 p-2.5 text-xs flex-1 rounded-sm focus:outline-none focus:border-stone-500"
+                        required
+                      />
+                      <button type="submit" className="bg-stone-900 hover:bg-stone-850 text-white text-xs px-6 py-2 uppercase font-bold tracking-wider rounded-sm transition">
+                        {lang === "fr" ? "Répondre" : "Reply"}
+                      </button>
+                    </form>
+                  </>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-xs text-stone-400 italic">
+                    {lang === "fr" ? "Sélectionnez une discussion à gauche pour y répondre en direct." : "Select a discussion on the left to reply live."}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POP-UP MODAL DE CONNEXION ADMIN (Désormais centrée en pop-up de haut d'écran) */}
+      {showLoginModal && (
+        <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white max-w-md w-full p-6 rounded-sm border border-stone-200 shadow-2xl relative">
+            <button
+              onClick={() => setShowLoginModal(false)}
+              className="absolute top-4 right-4 text-stone-400 hover:text-stone-700 text-lg"
+            >
+              ✕
+            </button>
+            <form onSubmit={handleUnlockAdmin} className="space-y-4">
+              <h3 className="text-sm font-bold uppercase text-stone-700 tracking-wider mb-2 text-center">
+                {lang === "fr" ? "Connexion Espace Modérateur" : "Admin Dashboard Access"}
+              </h3>
+              <div className="space-y-3">
+                <input
+                  type="password"
+                  placeholder={lang === "fr" ? "Entrez votre code secret" : "Enter secret code"}
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  className="border border-stone-300 p-2.5 text-sm w-full rounded-sm focus:outline-none focus:border-stone-500"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-stone-900 text-white py-2.5 uppercase text-xs font-bold tracking-widest hover:bg-stone-850 transition"
+              >
+                {lang === "fr" ? "Déverrouiller" : "Submit"}
+              </button>
+            </form>
           </div>
         </div>
       )}
