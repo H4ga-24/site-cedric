@@ -45,7 +45,7 @@ interface ChatMessage {
 
 interface ImagePreview {
   id: string;
-  file: File | null; // null si l'image provient d'une URL déjà stockée en base lors d'une modification
+  file: File | null;
   previewUrl: string;
 }
 
@@ -203,7 +203,7 @@ export default function Home() {
 
   // Sauvegarder le brouillon local
   useEffect(() => {
-    if (!isUnlocked || editingItemId) return; // Ne pas sauvegarder en local si on est en train de modifier une annonce existante
+    if (!isUnlocked || editingItemId) return;
     const draftData = {
       newTitleFr,
       newTitleEn,
@@ -289,16 +289,13 @@ export default function Home() {
     e.preventDefault();
   };
 
-  // Traiter l'envoi d'images ordonnées (conserve les URLs déjà existantes sans les réuploader)
-  const uploadOrderedImages = async (): Promise<string[]> => {
+  const uploadOrderedImages = async () => {
     const urls: string[] = [];
     for (let i = 0; i < imagePreviews.length; i++) {
       const img = imagePreviews[i];
       if (img.file === null) {
-        // Déjà sur Supabase Storage, on garde l'URL existante
         urls.push(img.previewUrl);
       } else {
-        // Nouveau fichier importé, on l'envoie sur le Storage
         const { file } = img;
         const fileExt = file.name.split(".").pop();
         const fileName = `${Date.now()}_${i}.${fileExt}`;
@@ -342,15 +339,13 @@ export default function Home() {
     setIsLot(item.is_lot);
     setLotContent(item.lot_content || []);
     
-    // Injecter les images existantes dans l'espace de prévisualisation
     const existingPreviews = item.images.map((url, idx) => ({
       id: `existing_${idx}_${Date.now()}`,
-      file: null, // Indique que c'est une image déjà stockée
+      file: null,
       previewUrl: url,
     }));
     setImagePreviews(existingPreviews);
 
-    // Ouvrir l'onglet d'édition
     setAdminTab("publish");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -390,14 +385,12 @@ export default function Home() {
     let resultError = null;
 
     if (editingItemId) {
-      // MODE MODIFICATION : On effectue un UPDATE
       const { error } = await supabase
         .from("items")
         .update(payload)
         .eq("id", editingItemId);
       resultError = error;
     } else {
-      // MODE NOUVELLE FICHE : On effectue un INSERT
       const { error } = await supabase.from("items").insert([payload]);
       resultError = error;
     }
@@ -424,7 +417,6 @@ export default function Home() {
     setIsSubmitting(false);
   };
 
-  // Annuler la modification en cours d'un objet
   const handleCancelEdit = () => {
     setNewTitleFr("");
     setNewTitleEn("");
@@ -441,7 +433,6 @@ export default function Home() {
     localStorage.removeItem("cedmilitaria_form_draft");
   };
 
-  // Envoyer un message (Acheteur)
   const handleSendBuyerMessage = async (e: React.FormEvent, isGeneral: boolean = false) => {
     e.preventDefault();
     if (!buyerNewMessage || (!activeChatConvoId && !buyerName)) {
@@ -476,7 +467,6 @@ export default function Home() {
     setIsSendingMessage(false);
   };
 
-  // Répondre à un fil (Admin)
   const handleSendAdminReply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adminReplyText || !selectedConvoId) return;
@@ -564,6 +554,29 @@ export default function Home() {
     }
   };
 
+  // CORRECTION CLÉ : AJOUT DU STRING DE LA COLONNE DANS .eq("id", id)
+  const handleDeleteItem = async (id: string) => {
+    if (confirm("Supprimer définitivement cet objet ?")) {
+      const { error } = await supabase.from("items").delete().eq("id", id);
+      if (error) {
+        alert("Erreur : " + error.message);
+      } else {
+        fetchItems();
+      }
+    }
+  };
+
+  const handleDeleteMessage = async (id: string) => {
+    if (confirm("Supprimer ce message ?")) {
+      const { error } = await supabase.from("messages").delete().eq("id", id);
+      if (error) {
+        alert("Erreur : " + error.message);
+      } else {
+        fetchAllMessages();
+      }
+    }
+  };
+
   const eras = [
     { code: "ALL", fr: "Toutes les époques", en: "All Eras" },
     { code: "WW1", fr: "Première Guerre mondiale", en: "World War I" },
@@ -637,7 +650,7 @@ export default function Home() {
       {/* En-tête */}
       <header className="border-b border-stone-200 bg-white">
         <div className="max-w-7xl mx-auto px-4 py-6 flex justify-between items-center">
-          <div className="pl-16"> {/* Laisse la place pour le bouton flottant de messagerie */}
+          <div className="pl-16">
             <h1 className="text-2xl font-serif tracking-wider text-stone-900 uppercase">
               CedMilitaria US
             </h1>
@@ -647,7 +660,6 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Ouvre la Modal de connexion en haut de l'écran */}
             <button
               onClick={() => {
                 if (isUnlocked) {
@@ -691,7 +703,7 @@ export default function Home() {
           <p className="text-stone-600 text-sm leading-relaxed max-w-2xl mx-auto font-sans">
             {lang === "fr" 
               ? "CedMilitaria US est spécialisé dans le négoce d'antiquités militaires d'époque. Parcourez notre catalogue pour acquérir des objets garantis d'origine. Nous sommes également acheteurs : si vous souhaitez nous proposer à la vente un objet historique ou une collection complète, contactez-nous."
-              : "CedMilitaria US specializes in the trade of genuine vintage military antiques. Browse our catalog to acquire guaranteed original items. We are also active buyers: if you wish to offer us a historical object or an entire collection for purchase, please get in touch."}
+              : "CedMilitaria US specializes in the trade of genuine vintage military antiques. Browse our catalogue to acquire guaranteed original items. We are also active buyers: if you wish to offer us a historical object or an entire collection for purchase, please get in touch."}
           </p>
           <div className="h-px bg-stone-300 w-16 mx-auto mt-8"></div>
         </div>
@@ -750,12 +762,11 @@ export default function Home() {
         </div>
       </section>
 
-      {/* MODULE ADMINISTRATION COMPLET AVEC ONGLETS (Sans la messagerie) */}
+      {/* MODULE ADMINISTRATION COMPLET */}
       {isAdminMode && isUnlocked && (
         <section className="bg-stone-100 border-b border-stone-200 p-6 animate-fadeIn">
           <div className="max-w-4xl mx-auto bg-white rounded-md shadow-xs border border-stone-200 overflow-hidden">
             
-            {/* Onglets Admin simplifiés */}
             <div className="bg-stone-900 text-white p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
               <div className="flex gap-2">
                 <button
@@ -779,7 +790,7 @@ export default function Home() {
               </button>
             </div>
 
-            {/* ONGLET 1 : PUBLICATION / CRÉATION D'OBJET */}
+            {/* ONGLET 1 : PUBLICATION */}
             {adminTab === "publish" && (
               <div className="p-6">
                 <div className="flex justify-between items-center border-b pb-3 mb-4">
@@ -1025,7 +1036,7 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* Prévisualisations interactives style Facebook (Max 20) */}
+                  {/* Prévisualisations photos style Facebook (Max 20) */}
                   <div className="border border-stone-200 p-4 rounded-sm bg-stone-50 space-y-4">
                     <label className="block text-xs font-bold uppercase text-stone-700">
                       {lang === "fr" ? "Sélection & Organisation des Photos (Max 20)" : "Photo Selection & Rearranging (Max 20)"}
@@ -1091,7 +1102,6 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/* ACTIONS : PUBLICATION DIRECTE OU BROUILLON */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <button
                       type="submit"
@@ -1114,7 +1124,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* ONGLET 2 : BROUILLONS SUPABASE PRÉPARÉS ET ENFIN ÉDITABLES */}
+            {/* ONGLET 2 : BROUILLONS PRÉPARÉS ET ENFIN ÉDITABLES */}
             {adminTab === "drafts" && (
               <div className="p-6">
                 <h3 className="text-base font-serif text-stone-800 mb-4 border-b pb-2">
@@ -1504,7 +1514,6 @@ export default function Home() {
                       {lang === "fr" ? "Discuter en direct avec Cédric" : "Chat Live with Cedric"}
                     </h4>
 
-                    {/* Zone d'affichage des messages du fil */}
                     {activeChatConvoId && (
                       <div className="space-y-2 max-h-[120px] overflow-y-auto p-2 bg-white border border-stone-150 rounded-xs text-[11px] leading-relaxed">
                         {messages.filter(m => m.conversation_id === activeChatConvoId).map((msg, idx) => {
@@ -1565,12 +1574,7 @@ export default function Home() {
       {showGeneralChatModal && (
         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white max-w-lg w-full p-6 rounded-sm border border-stone-200 shadow-2xl relative">
-            <button
-              onClick={() => setShowGeneralChatModal(false)}
-              className="absolute top-4 right-4 text-stone-400 hover:text-stone-700 text-lg"
-            >
-              ✕
-            </button>
+            <button onClick={() => setShowGeneralChatModal(false)} className="absolute top-4 right-4 text-stone-400 hover:text-stone-700 text-lg">✕</button>
             <h3 className="text-lg font-serif text-stone-950 mb-4 border-b pb-2 uppercase tracking-wide">
               {lang === "fr" ? "Proposer une collection à Cédric (Chat)" : "Propose a Collection to Cedric (Chat)"}
             </h3>
@@ -1628,12 +1632,7 @@ export default function Home() {
       {showInboxModal && isUnlocked && (
         <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
           <div className="bg-white max-w-5xl w-full h-[85vh] rounded-md border border-stone-200 shadow-2xl flex flex-col relative overflow-hidden">
-            <button
-              onClick={() => setShowInboxModal(false)}
-              className="absolute top-4 right-4 text-stone-400 hover:text-stone-700 text-lg z-10"
-            >
-              ✕
-            </button>
+            <button onClick={() => setShowInboxModal(false)} className="absolute top-4 right-4 text-stone-400 hover:text-stone-700 text-lg z-10">✕</button>
             <div className="bg-stone-900 text-white p-4">
               <h3 className="text-base font-serif uppercase tracking-wider">
                 {lang === "fr" ? "Console de Messagerie Directe Clients" : "Live Customer Inbox"}
@@ -1641,7 +1640,6 @@ export default function Home() {
             </div>
 
             <div className="flex-1 flex flex-col md:flex-row h-full overflow-hidden">
-              {/* Liste des conversations de gauche */}
               <div className="w-full md:w-1/3 border-r border-stone-200 divide-y divide-stone-150 overflow-y-auto bg-stone-50 max-h-[30vh] md:max-h-none">
                 {convoList.length === 0 ? (
                   <p className="text-xs text-stone-400 italic p-6 text-center">{lang === "fr" ? "Aucune conversation." : "No chats yet."}</p>
@@ -1664,7 +1662,6 @@ export default function Home() {
                 )}
               </div>
 
-              {/* Discussion et zone de réponse de droite */}
               <div className="flex-1 flex flex-col justify-between bg-stone-100 h-[50vh] md:h-auto overflow-hidden">
                 {selectedConvoId ? (
                   <>
@@ -1699,7 +1696,7 @@ export default function Home() {
                   </>
                 ) : (
                   <div className="flex-1 flex items-center justify-center text-xs text-stone-400 italic">
-                    {lang === "fr" ? "Sélectionnez une discussion à gauche pour y répondre en direct." : "Select a discussion on the left to reply live."}
+                    {lang === "fr" ? "Sélectionnez une discussion à gauche pour y répondre en direct." : "Select a conversation on the left to reply live."}
                   </div>
                 )}
               </div>
@@ -1708,16 +1705,11 @@ export default function Home() {
         </div>
       )}
 
-      {/* POP-UP MODAL DE CONNEXION ADMIN (Désormais centrée en pop-up de haut d'écran) */}
+      {/* POP-UP MODAL DE CONNEXION ADMIN */}
       {showLoginModal && (
         <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
           <div className="bg-white max-w-md w-full p-6 rounded-sm border border-stone-200 shadow-2xl relative">
-            <button
-              onClick={() => setShowLoginModal(false)}
-              className="absolute top-4 right-4 text-stone-400 hover:text-stone-700 text-lg"
-            >
-              ✕
-            </button>
+            <button onClick={() => setShowLoginModal(false)} className="absolute top-4 right-4 text-stone-400 hover:text-stone-700 text-lg">✕</button>
             <form onSubmit={handleUnlockAdmin} className="space-y-4">
               <h3 className="text-sm font-bold uppercase text-stone-700 tracking-wider mb-2 text-center">
                 {lang === "fr" ? "Connexion Espace Modérateur" : "Admin Dashboard Access"}
